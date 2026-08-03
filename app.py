@@ -313,16 +313,30 @@ if st.session_state.get('analiz_tamam', False):
         st.dataframe(iy_ms_df, use_container_width=True)
         st.markdown("---")
         st.markdown("### 💎 Ekstrem Bahis İhtimalleri (Sürpriz Arayanlar İçin)")
+        st.info("💡 **Nasıl Okunmalı?** Dünya genelinde sıradan bir maçta 'İki Yarıda 1.5 Üst' %6, 'İki Yarı KG' ise %3 ihtimalle gelir. Aşağıdaki oklar, bu maçın dünya ortalamasına göre matematiğe aykırı bir fırsat barındırıp barındırmadığını gösterir.")
+        
         ek1, ek2 = st.columns(2)
+        
+        yuzde_15 = st.session_state.get('iki_yari_15_ust', 0)
+        yuzde_kg = st.session_state.get('iki_yari_kg', 0)
+        
+        # Dünya ortalamaları ile kıyaslama (Fark hesaplama)
+        fark_15 = round(yuzde_15 - 6.0, 1)
+        fark_kg = round(yuzde_kg - 3.0, 1)
+        
         ek1.metric(
             label="Her İki Yarıda 1.5 Üst Olasılığı", 
-            value=f"%{st.session_state.get('iki_yari_15_ust', 0)}"
+            value=f"%{yuzde_15}",
+            delta=f"Dünya Ortalamasından %{abs(fark_15)} {'Yüksek (Potansiyelli)' if fark_15 > 0 else 'Düşük (Riskli)'}",
+            delta_color="normal" if fark_15 > 0 else "inverse"
         )
+        
         ek2.metric(
             label="Her İki Yarıda KG Var Olasılığı", 
-            value=f"%{st.session_state.get('iki_yari_kg', 0)}"
+            value=f"%{yuzde_kg}",
+            delta=f"Dünya Ortalamasından %{abs(fark_kg)} {'Yüksek (Potansiyelli)' if fark_kg > 0 else 'Düşük (Riskli)'}",
+            delta_color="normal" if fark_kg > 0 else "inverse"
         )
-
     with tab3:
         st.subheader("Finansal Değer Analizi (Value Bet)")
         st.write("Bu sekme, ajanın bulduğu geçmiş gerçekleşme yüzdeleri ile bahis şirketinin verdiği oranları kıyaslar. **'Beklenen Değer (EV)' 0'dan büyükse**, matematiksel olarak avantajlısınız demektir.")
