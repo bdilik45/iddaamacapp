@@ -213,10 +213,48 @@ if st.session_state.get('analiz_tamam', False):
     
     with tab1:
         st.subheader("Piyasa Beklentisi vs. Gerçekleşenler")
-        grafik_verisi = pd.DataFrame({"Sonuç": ["MS 1", "MS 0", "MS 2"], "Gerçekleşen (%)": [ms.get('MS 1', 0), ms.get('MS 0', 0), ms.get('MS 2', 0)]}).set_index("Sonuç")
-        st.bar_chart(grafik_verisi, color="#1f77b4")
-        st.dataframe(st.session_state['benzer_maclar'].head(15))
-
+        
+        grafik_verisi = pd.DataFrame({
+            "Sonuç": ["MS 1", "MS 0 (Beraberlik)", "MS 2"],
+            "Geçmişte Gerçekleşen (%)": [ms.get('MS 1', 0), ms.get('MS 0', 0), ms.get('MS 2', 0)]
+        }).set_index("Sonuç")
+        
+        col_grafik1, col_grafik2 = st.columns(2)
+        with col_grafik1:
+            st.markdown("**Maç Sonucu Dağılımı**")
+            st.bar_chart(grafik_verisi, color="#1f77b4")
+            
+        with col_grafik2:
+            st.markdown("**Gol Beklentisi Göstergesi**")
+            st.progress(kg / 100, text=f"KG Var İhtimali: %{kg}")
+            st.progress(ust / 100, text=f"2.5 Üst İhtimali: %{ust}")
+            
+        st.markdown("---")
+        st.subheader("🔍 İnteraktif Benzer Maçlar Veritabanı (50 Örneklem)")
+        
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            gosterilecek_sayi = st.slider("Gösterilecek Maç Sayısı", min_value=5, max_value=50, value=10, step=5)
+        with col_f2:
+            ms_filtre = st.multiselect("Sonuca Göre Filtrele", options=["MS 1", "MS 0", "MS 2"], default=["MS 1", "MS 0", "MS 2"])
+        with col_f3:
+            tum_iy_ms = ["1/1", "1/0", "1/2", "0/1", "0/0", "0/2", "2/1", "2/0", "2/2"]
+            iy_ms_filtre = st.multiselect("İY/MS Senaryosuna Göre Filtrele", options=tum_iy_ms, default=tum_iy_ms)
+        
+        filtreli_df = st.session_state['benzer_maclar'][
+            (st.session_state['benzer_maclar']['Sonuç'].isin(ms_filtre)) & 
+            (st.session_state['benzer_maclar']['İY/MS'].isin(iy_ms_filtre))
+        ]
+        
+        st.dataframe(filtreli_df.head(gosterilecek_sayi))
+        
+        csv_data = filtreli_df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 Bu 50 Benzer Maçın Verisini Excel (CSV) Olarak İndir",
+            data=csv_data,
+            file_name="macapp_benzer_maclar_analizi.csv",
+            mime="text/csv"
+        )
     with tab2:
         st.subheader("Geçmiş Performans Testi (Backtest)")
         iy_ms_df = pd.DataFrame(list(iy_ms.items()), columns=['İY/MS Senaryosu', 'Gerçekleşme (%)']).sort_values(by='Gerçekleşme (%)', ascending=False).reset_index(drop=True)
