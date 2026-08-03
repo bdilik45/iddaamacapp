@@ -15,7 +15,7 @@ st.set_page_config(page_title="MacApp Pro", page_icon="⚽", layout="wide")
 def motoru_baslat():
     # DOSYA ADINI BURAYA YAZIYORUZ (.csv, .zip veya .parquet hangisini kullanıyorsan uzantıya dikkat et)
     veri_yolu = "iddaa_arsiv_YEDEK.parquet" 
-    df = pd.read_parquet(veri_yolu, low_memory=False)
+    df = pd.read_parquet(veri_yolu)
     
     # 1. YENİ BAŞLIKLARI BİZİM SİSTEME TERCÜME EDİYORUZ
     df['Mac'] = df['HomeTeam'] + " - " + df['AwayTeam']
