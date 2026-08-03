@@ -1,5 +1,8 @@
 import streamlit as st
 import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
+import json
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 import requests
@@ -12,20 +15,49 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="MacApp Pro", page_icon="⚽", layout="wide")
 
 # Kayıt Dosyası Adı
-TAKIP_DOSYASI = "tahmin_gecmisi.csv"
+# --- GOOGLE SHEETS KALICI VERİTABANI BAĞLANTISI ---
+@st.cache_resource
+def google_sheets_baglan():
+    try:
+        key_dict = json.loads(st.secrets["GOOGLE_JSON"])
+        creds = Credentials.from_service_account_info(
+            key_dict, 
+            scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        )
+        client = gspread.authorize(creds)
+        sheet = client.open_by_url(st.secrets["GOOGLE_SHEET_URL"]).sheet1
+        return sheet
+    except Exception as e:
+        st.error("Google Sheets bağlantı hatası! Lütfen Streamlit Secrets ayarlarını kontrol edin.")
+        return None
 
 def takip_dosyasi_yukle():
-    if os.path.exists(TAKIP_DOSYASI):
-        return pd.read_csv(TAKIP_DOSYASI)
+    sheet = google_sheets_baglan()
+    if sheet is None: return pd.DataFrame()
+    
+    veriler = sheet.get_all_records()
+    beklenen_sutunlar = [
+        'ID', 'Tarih', 'Mac', 'Banko_Tahmin', 'Banko_Oran', 
+        'Ideal_Tahmin', 'Ideal_Oran', 'IYMS_Tahmin', 'IYMS_Oran', 
+        'Surpriz_Tahmin', 'Surpriz_Oran', 'IY_Skor', 'MS_Skor', 
+        'Korner', 'Sut', 'Kart', 'Durum'
+    ]
+    
+    if not veriler:
+        sheet.append_row(beklenen_sutunlar)
+        return pd.DataFrame(columns=beklenen_sutunlar)
     else:
-        return pd.DataFrame(columns=[
-            'ID', 'Tarih', 'Mac', 'Banko_Tahmin', 'Banko_Oran', 
-            'Ideal_Tahmin', 'Ideal_Oran', 'IYMS_Tahmin', 'IYMS_Oran', 
-            'Surpriz_Tahmin', 'Surpriz_Oran', 'IY_Skor', 'MS_Skor', 'Durum'
-        ])
+        df = pd.DataFrame(veriler)
+        for col in beklenen_sutunlar:
+            if col not in df.columns: df[col] = "-"
+        return df
 
 def takip_dosyasi_kaydet(df_takip):
-    df_takip.to_csv(TAKIP_DOSYASI, index=False)
+    sheet = google_sheets_baglan()
+    if sheet is not None:
+        sheet.clear()
+        data = [df_takip.columns.values.tolist()] + df_takip.fillna("").values.tolist()
+        sheet.update(range_name='A1', values=data)
 
 # --- YAPAY ZEKA MOTORU ---
 @st.cache_resource
