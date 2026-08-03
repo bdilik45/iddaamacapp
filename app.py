@@ -68,18 +68,30 @@ def analiz_et(ph, pd_oran, pa, pover):
     kg_yuzdesi = round(hedef_maclar['KG'].mean() * 100, 1)
     ust_yuzdesi = round((hedef_maclar['tot'] > 2.5).mean() * 100, 1)
     
+    # 🔴 YENİ EKLENEN KISIM: İkinci yarı istatistikleri ve Ekstrem Bahisler
+    hedef_maclar['HT_Total'] = hedef_maclar['HTHG'] + hedef_maclar['HTAG']
+    hedef_maclar['SH_Home'] = hedef_maclar['FTHG'] - hedef_maclar['HTHG']
+    hedef_maclar['SH_Away'] = hedef_maclar['FTAG'] - hedef_maclar['HTAG']
+    hedef_maclar['SH_Total'] = hedef_maclar['SH_Home'] + hedef_maclar['SH_Away']
+
+    # Her İki Yarıda 1.5 Üst İhtimali (İlk yarı min 2 gol, İkinci yarı min 2 gol)
+    hedef_maclar['IkiYari_15Ust'] = (hedef_maclar['HT_Total'] >= 2) & (hedef_maclar['SH_Total'] >= 2)
+    iki_yari_15_ust_yuzdesi = round(hedef_maclar['IkiYari_15Ust'].mean() * 100, 1)
+
+    # Her İki Yarıda KG Var İhtimali (İlk yarı iki takım da atacak, İkinci yarı iki takım da atacak)
+    hedef_maclar['HT_KG'] = (hedef_maclar['HTHG'] > 0) & (hedef_maclar['HTAG'] > 0)
+    hedef_maclar['SH_KG'] = (hedef_maclar['SH_Home'] > 0) & (hedef_maclar['SH_Away'] > 0)
+    hedef_maclar['IkiYari_KG'] = hedef_maclar['HT_KG'] & hedef_maclar['SH_KG']
+    iki_yari_kg_yuzdesi = round(hedef_maclar['IkiYari_KG'].mean() * 100, 1)
+    
+    # İY/MS Hesaplamaları
     hedef_maclar['IY_Kod'] = np.where(hedef_maclar['HTHG'] > hedef_maclar['HTAG'], '1', 
                              np.where(hedef_maclar['HTHG'] < hedef_maclar['HTAG'], '2', '0'))
-    
     ms_kisa_map = {'H': '1', 'D': '0', 'A': '2'}
     hedef_maclar['MS_Kisa'] = hedef_maclar['res'].map(ms_kisa_map)
     hedef_maclar['IY_MS'] = hedef_maclar['IY_Kod'] + "/" + hedef_maclar['MS_Kisa']
     
-    tum_ihtimaller = {
-        '1/1': 0.0, '1/0': 0.0, '1/2': 0.0, 
-        '0/1': 0.0, '0/0': 0.0, '0/2': 0.0, 
-        '2/1': 0.0, '2/0': 0.0, '2/2': 0.0
-    }
+    tum_ihtimaller = {'1/1': 0.0, '1/0': 0.0, '1/2': 0.0, '0/1': 0.0, '0/0': 0.0, '0/2': 0.0, '2/1': 0.0, '2/0': 0.0, '2/2': 0.0}
     hesaplanan_oranlar = (hedef_maclar['IY_MS'].value_counts(normalize=True) * 100).round(1).to_dict()
     tum_ihtimaller.update(hesaplanan_oranlar)
     iy_ms_oranlari = tum_ihtimaller
@@ -102,19 +114,10 @@ def analiz_et(ph, pd_oran, pa, pover):
     tablo_df['İlk Yarı Skoru'] = tablo_df['HTHG'].astype(str) + " - " + tablo_df['HTAG'].astype(str)
     tablo_df['Maç Sonu Skoru'] = tablo_df['FTHG'].astype(str) + " - " + tablo_df['FTAG'].astype(str)
     
-    tablo_df = tablo_df.rename(columns={
-        'Date': 'Tarih',
-        'Mac': 'Maç',
-        'Open_H': 'Oran 1',
-        'Open_D': 'Oran X',
-        'Open_A': 'Oran 2',
-        'Open_O25': 'Oran Üst',
-        'MS_Kod': 'Sonuç',
-        'IY_MS': 'İY/MS'
-    })[['Tarih', 'Maç', 'Oran 1', 'Oran X', 'Oran 2', 'Oran Üst', 'İlk Yarı Skoru', 'Maç Sonu Skoru', 'Sonuç', 'İY/MS']]
+    tablo_df = tablo_df.rename(columns={'Date': 'Tarih', 'Mac': 'Maç', 'Open_H': 'Oran 1', 'Open_D': 'Oran X', 'Open_A': 'Oran 2', 'Open_O25': 'Oran Üst', 'MS_Kod': 'Sonuç', 'IY_MS': 'İY/MS'})[['Tarih', 'Maç', 'Oran 1', 'Oran X', 'Oran 2', 'Oran Üst', 'İlk Yarı Skoru', 'Maç Sonu Skoru', 'Sonuç', 'İY/MS']]
 
-    return ms_oranlari, kg_yuzdesi, ust_yuzdesi, yildizlar, tablo_df, iy_ms_oranlari
-
+    # 🔴 YENİ DEĞERLERİ RETURN KISMINA EKLEDİK
+    return ms_oranlari, kg_yuzdesi, ust_yuzdesi, yildizlar, tablo_df, iy_ms_oranlari, iki_yari_15_ust_yuzdesi, iki_yari_kg_yuzdesi
 def beklenen_deger_hesapla(oran, ihtimal_yuzdesi):
     ihtimal = ihtimal_yuzdesi / 100
     ev = (ihtimal * oran) - 1
