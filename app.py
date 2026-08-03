@@ -118,6 +118,7 @@ def analiz_et(ph, pd_oran, pa, pover):
 
     # 🔴 YENİ DEĞERLERİ RETURN KISMINA EKLEDİK
     return ms_oranlari, kg_yuzdesi, ust_yuzdesi, yildizlar, tablo_df, iy_ms_oranlari, iki_yari_15_ust_yuzdesi, iki_yari_kg_yuzdesi
+    
 def beklenen_deger_hesapla(oran, ihtimal_yuzdesi):
     ihtimal = ihtimal_yuzdesi / 100
     ev = (ihtimal * oran) - 1
@@ -216,10 +217,10 @@ pd_gercek = (1 / ms0_oran) / taraf_marj
 pa_gercek = (1 / ms2_oran) / taraf_marj
 pover_gercek = (1 / ust_oran) / 1.07
 
-if st.sidebar.button("🔍 Yapay Zeka Analizini Başlat", use_container_width=True):
+if st.sidebar.button("🔍 Yapay Zeka Analizini Başlat"):
     with st.spinner("MacApp geçmiş verileri tarıyor ve simülasyonları çalıştırıyor..."):
-        # YZ artık 4 boyutlu vektör kullanıyor (pKG çıkarıldı)
-        ms, kg, ust, yildizlar, benzer_maclar, iy_ms = analiz_et(ph_gercek, pd_gercek, pa_gercek, pover_gercek)
+        # YENİ DEĞİŞKENLER BURAYA EKLENDİ
+        ms, kg, ust, yildizlar, benzer_maclar, iy_ms, iki_yari_15_ust, iki_yari_kg = analiz_et(ph_gercek, pd_gercek, pa_gercek, pover_gercek)
         
         st.session_state['analiz_tamam'] = True
         st.session_state['ms'] = ms
@@ -228,6 +229,8 @@ if st.sidebar.button("🔍 Yapay Zeka Analizini Başlat", use_container_width=Tr
         st.session_state['yildizlar'] = yildizlar
         st.session_state['benzer_maclar'] = benzer_maclar
         st.session_state['iy_ms'] = iy_ms
+        st.session_state['iki_yari_15_ust'] = iki_yari_15_ust
+        st.session_state['iki_yari_kg'] = iki_yari_kg
         st.session_state['secilen_mac_baslik'] = secilen_mac
 
 if st.session_state.get('analiz_tamam', False):
@@ -308,6 +311,17 @@ if st.session_state.get('analiz_tamam', False):
         iy_ms_df = pd.DataFrame(list(iy_ms.items()), columns=['İY/MS Senaryosu', 'Geçmişte Görülme Yüzdesi (%)'])
         iy_ms_df = iy_ms_df.sort_values(by='Geçmişte Görülme Yüzdesi (%)', ascending=False).reset_index(drop=True)
         st.dataframe(iy_ms_df, use_container_width=True)
+        st.markdown("---")
+        st.markdown("### 💎 Ekstrem Bahis İhtimalleri (Sürpriz Arayanlar İçin)")
+        ek1, ek2 = st.columns(2)
+        ek1.metric(
+            label="Her İki Yarıda 1.5 Üst Olasılığı", 
+            value=f"%{st.session_state.get('iki_yari_15_ust', 0)}"
+        )
+        ek2.metric(
+            label="Her İki Yarıda KG Var Olasılığı", 
+            value=f"%{st.session_state.get('iki_yari_kg', 0)}"
+        )
 
     with tab3:
         st.subheader("Finansal Değer Analizi (Value Bet)")
