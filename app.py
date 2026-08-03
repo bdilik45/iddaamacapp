@@ -17,6 +17,9 @@ def motoru_baslat():
     veri_yolu = "iddaa_arsiv_YEDEK.parquet" 
     df = pd.read_parquet(veri_yolu)
     
+# 🔴 EKLENECEK MUCİZEVİ SATIR BURASI: Kopyaları (Tekrarlayan Maçları) Temizle 
+    df = df.drop_duplicates(subset=['Date', 'HomeTeam', 'AwayTeam'])
+    
     # 1. YENİ BAŞLIKLARI BİZİM SİSTEME TERCÜME EDİYORUZ
     df['Mac'] = df['HomeTeam'] + " - " + df['AwayTeam']
     df['res'] = df['FTR']  # FTR: Full Time Result (H, D, A)
