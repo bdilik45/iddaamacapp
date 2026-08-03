@@ -75,7 +75,6 @@ def takip_dosyasi_kaydet(df_takip):
             pass
     df_takip.to_csv("tahmin_gecmisi.csv", index=False)
 
-# Oranları Düzgün Gösterme Yardımcısı (146 -> 1.46)
 def oran_duzelt(deger):
     try:
         val = float(deger)
@@ -149,7 +148,6 @@ def analiz_et(ph, pd_oran, pa, pover):
 
     iki_yari_15_ust_yuzdesi = round(hedef_maclar['HT_Total'].ge(2).mean() * hedef_maclar['SH_Total'].ge(2).mean() * 100 * 1.4, 1)
     
-    # 🔴 HATA DÜZELTME: Parantezler eklenerek TypeError önlendi
     ht_kg_serisi = (hedef_maclar['HTHG'] > 0) & (hedef_maclar['HTAG'] > 0)
     sh_kg_serisi = (hedef_maclar['SH_Home'] > 0) & (hedef_maclar['SH_Away'] > 0)
     iki_yari_kg_yuzdesi = round((ht_kg_serisi & sh_kg_serisi).mean() * 100 * 1.8, 1)
@@ -186,6 +184,7 @@ def analiz_et(ph, pd_oran, pa, pover):
     tablo_df['Maç Sonu Skoru'] = tablo_df['FTHG'].astype(str) + " - " + tablo_df['FTAG'].astype(str)
     tablo_df = tablo_df.rename(columns={'Date': 'Tarih', 'Mac': 'Maç', 'Open_H': 'Oran 1', 'Open_D': 'Oran X', 'Open_A': 'Oran 2', 'Open_O25': 'Oran Üst', 'MS_Kod': 'Sonuç', 'IY_MS': 'İY/MS'})[['Tarih', 'Maç', 'Oran 1', 'Oran X', 'Oran 2', 'Oran Üst', 'İlk Yarı Skoru', 'Maç Sonu Skoru', 'Sonuç', 'İY/MS']]
 
+    # 🔴 Doğru sırayla dışarıya aktarılıyor
     return ms_oranlari, kg_yuzdesi, ust_yuzdesi, tablo_df, iy_ms_oranlari, iki_yari_15_ust_yuzdesi, iki_yari_kg_yuzdesi, stats
 
 def beklenen_deger_hesapla(oran, ihtimal_yuzdesi):
@@ -261,17 +260,18 @@ pover_gercek = (1 / ust_oran) / 1.06
 
 if st.sidebar.button("🚀 Yapay Zeka Analizini Başlat", use_container_width=True):
     with st.spinner("Model benzer tarihi maçları tarıyor ve risk hesaplıyor..."):
-        ms, kg, ust, benzer_maclar, iy_ms, iki_yari_15_ust, iki_yari_kg, stats = analiz_et(ph_gercek, pd_gercek, pa_gercek, pover_gercek)
+        # 🔴 Doğru sırayla değişkenlere atanıyor
+        ms, kg_yuzdesi, ust_yuzdesi, benzer_maclar, iy_ms, iki_yari_15_ust, iki_yari_kg, stats = analiz_et(ph_gercek, pd_gercek, pa_gercek, pover_gercek)
         st.session_state.update({
-            'analiz_tamam': True, 'ms': ms, 'kg': kg, 'ust': ust,
+            'analiz_tamam': True, 'ms': ms, 'kg_yuzdesi': kg_yuzdesi, 'ust_yuzdesi': ust_yuzdesi,
             'benzer_maclar': benzer_maclar, 'iy_ms': iy_ms, 'iki_yari_15_ust': iki_yari_15_ust,
             'iki_yari_kg': iki_yari_kg, 'stats': stats, 'secilen_mac_baslik': secilen_mac
         })
 
 if st.session_state.get('analiz_tamam', False):
     ms = st.session_state['ms']
-    kg = st.session_state['kg']
-    ust = st.session_state['ust']
+    kg_yuzdesi = st.session_state['kg_yuzdesi']
+    ust_yuzdesi = st.session_state['ust_yuzdesi']
     stats = st.session_state['stats']
     iy_ms = st.session_state['iy_ms']
     aktif_mac = st.session_state.get('secilen_mac_baslik', 'Özel Maç')
@@ -287,8 +287,8 @@ if st.session_state.get('analiz_tamam', False):
         "MS 1": {"prob": ms.get('MS 1', 0), "oran": ms1_oran, "ev": beklenen_deger_hesapla(ms1_oran, ms.get('MS 1', 0))},
         "MS 0": {"prob": ms.get('MS 0', 0), "oran": ms0_oran, "ev": beklenen_deger_hesapla(ms0_oran, ms.get('MS 0', 0))},
         "MS 2": {"prob": ms.get('MS 2', 0), "oran": ms2_oran, "ev": beklenen_deger_hesapla(ms2_oran, ms.get('MS 2', 0))},
-        "2.5 ÜST": {"prob": ust, "oran": ust_oran, "ev": beklenen_deger_hesapla(ust_oran, ust)},
-        "KG VAR": {"prob": kg, "oran": kg_oran, "ev": beklenen_deger_hesapla(kg_oran, kg)}
+        "2.5 ÜST": {"prob": ust_yuzdesi, "oran": ust_oran, "ev": beklenen_deger_hesapla(ust_oran, ust_yuzdesi)},
+        "KG VAR": {"prob": kg_yuzdesi, "oran": kg_oran, "ev": beklenen_deger_hesapla(kg_oran, kg_yuzdesi)}
     }
     
     en_degerli_isim = max(ev_dict, key=lambda x: ev_dict[x]['ev'])
@@ -390,7 +390,7 @@ if st.session_state.get('analiz_tamam', False):
             takip_dosyasi_kaydet(df_takip)
             st.toast("✅ Analiz kalıcı hafızaya kaydedildi!", icon="📌")
 
-    # --- TAB 4: TAHMİN TAKİBİ & DÜZELTİLMİŞ ORAN GÖRÜNÜMÜ ---
+    # --- TAB 4: TAHMİN TAKİBİ ---
     with tab4:
         st.subheader("📈 Tahmin Takibi & Gelişmiş Sonuç / İstatistik Paneli")
         df_takip = takip_dosyasi_yukle()
@@ -398,7 +398,6 @@ if st.session_state.get('analiz_tamam', False):
         if len(df_takip) == 0:
             st.info("Kayıtlı veri bulunmuyor.")
         else:
-            # Tablodaki eski hatalı oranları ekranda düzgün göstermek için formatlıyoruz
             df_gosterge = df_takip.copy()
             for oran_sutun in ['Banko_Oran', 'Ideal_Oran', 'IYMS_Oran', 'Surpriz_Oran']:
                 if oran_sutun in df_gosterge.columns:
@@ -451,7 +450,7 @@ if st.session_state.get('analiz_tamam', False):
                     df_takip.loc[df_takip['ID'] == secili_id, 'IY_Skor'] = iy_skor_gir
                     df_takip.loc[df_takip['ID'] == secili_id, 'MS_Skor'] = ms_skor_gir
                     df_takip.loc[df_takip['ID'] == secili_id, 'Korner'] = korner_gir
-                    df_takip.loc[df_takip['ID'] == secili_id, 'Sut'] = süt_gir if 'süt_gir' in locals() else sut_gir
+                    df_takip.loc[df_takip['ID'] == secili_id, 'Sut'] = sut_gir
                     df_takip.loc[df_takip['ID'] == secili_id, 'Kart'] = kart_gir
                     df_takip.loc[df_takip['ID'] == secili_id, 'Durum'] = 'Tamamlandı'
                     takip_dosyasi_kaydet(df_takip)
