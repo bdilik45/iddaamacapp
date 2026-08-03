@@ -12,7 +12,6 @@ warnings.filterwarnings('ignore')
 # --- SAYFA VE TEMA AYARLARI ---
 st.set_page_config(page_title="MacApp Pro | Trading Terminal", page_icon="⚽", layout="wide")
 
-# Özel CSS ile Modern ve Profesyonel Görünüm
 st.markdown("""
     <style>
     .main { background-color: #0e1117; color: #fafafa; }
@@ -75,6 +74,16 @@ def takip_dosyasi_kaydet(df_takip):
         except:
             pass
     df_takip.to_csv("tahmin_gecmisi.csv", index=False)
+
+# Oranları Düzgün Gösterme Yardımcısı (146 -> 1.46)
+def oran_duzelt(deger):
+    try:
+        val = float(deger)
+        if val > 10:
+            return round(val / 100.0, 2)
+        return round(val, 2)
+    except:
+        return deger
 
 # --- YAPAY ZEKA VE KNN MOTORU ---
 @st.cache_resource
@@ -139,7 +148,11 @@ def analiz_et(ph, pd_oran, pa, pover):
     hedef_maclar['SH_Total'] = hedef_maclar['SH_Home'] + hedef_maclar['SH_Away']
 
     iki_yari_15_ust_yuzdesi = round(hedef_maclar['HT_Total'].ge(2).mean() * hedef_maclar['SH_Total'].ge(2).mean() * 100 * 1.4, 1)
-    iki_yari_kg_yuzdesi = round((hedef_maclar['HTHG'] > 0) & (hedef_maclar['HTAG'] > 0) & (hedef_maclar['SH_Home'] > 0) & (hedef_maclar['SH_Away'] > 0).mean() * 100 * 1.8, 1)
+    
+    # 🔴 HATA DÜZELTME: Parantezler eklenerek TypeError önlendi
+    ht_kg_serisi = (hedef_maclar['HTHG'] > 0) & (hedef_maclar['HTAG'] > 0)
+    sh_kg_serisi = (hedef_maclar['SH_Home'] > 0) & (hedef_maclar['SH_Away'] > 0)
+    iki_yari_kg_yuzdesi = round((ht_kg_serisi & sh_kg_serisi).mean() * 100 * 1.8, 1)
     
     hedef_maclar['IY_Kod'] = np.where(hedef_maclar['HTHG'] > hedef_maclar['HTAG'], '1', 
                              np.where(hedef_maclar['HTHG'] < hedef_maclar['HTAG'], '2', '0'))
@@ -301,7 +314,7 @@ if st.session_state.get('analiz_tamam', False):
         surpriz_isim = "MS 0"
         surpriz_oran = ms0_oran
 
-    # --- TAB 1: PROFESYONEL GÖRSEL DASHBOARD ---
+    # --- TAB 1: DASHBOARD ---
     with tab1:
         st.subheader("🎯 Olasılık Dağılımı ve Piyasa Analizi")
         
@@ -341,7 +354,7 @@ if st.session_state.get('analiz_tamam', False):
         c_b1.metric("İki Yarıda 1.5 Üst Olasılığı", f"%{st.session_state['iki_yari_15_ust']}")
         c_b2.metric("İki Yarıda KG Var Olasılığı", f"%{st.session_state['iki_yari_kg']}")
 
-    # --- TAB 3: ROI & KASA YÖNETİMİ ---
+    # --- TAB 3: ROI & KASA ---
     with tab3:
         st.subheader("💎 Value Bet & Beklenen Değer (EV) Hesaplayıcı")
         if en_degerli_ev > 0:
@@ -366,10 +379,10 @@ if st.session_state.get('analiz_tamam', False):
                 'ID': yeni_id,
                 'Tarih': pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
                 'Mac': aktif_mac,
-                'Banko_Tahmin': banko_isim, 'Banko_Oran': banko_oran,
-                'Ideal_Tahmin': ideal_isim, 'Ideal_Oran': ideal_oran,
-                'IYMS_Tahmin': en_yuksek_iyms, 'IYMS_Oran': iyms_oran_tahmin,
-                'Surpriz_Tahmin': surpriz_isim, 'Surpriz_Oran': surpriz_oran,
+                'Banko_Tahmin': banko_isim, 'Banko_Oran': f"{banko_oran:.2f}",
+                'Ideal_Tahmin': ideal_isim, 'Ideal_Oran': f"{ideal_oran:.2f}",
+                'IYMS_Tahmin': en_yuksek_iyms, 'IYMS_Oran': f"{iyms_oran_tahmin:.2f}",
+                'Surpriz_Tahmin': surpriz_isim, 'Surpriz_Oran': f"{surpriz_oran:.2f}",
                 'IY_Skor': 'Oynanmadı', 'MS_Skor': 'Oynanmadı', 
                 'Korner': '-', 'Sut': '-', 'Kart': '-', 'Durum': 'Bekliyor'
             }
@@ -377,7 +390,7 @@ if st.session_state.get('analiz_tamam', False):
             takip_dosyasi_kaydet(df_takip)
             st.toast("✅ Analiz kalıcı hafızaya kaydedildi!", icon="📌")
 
-    # --- TAB 4: TAHMİN TAKİBİ & Kapsamlı Manuel Sonuç Girişi ---
+    # --- TAB 4: TAHMİN TAKİBİ & DÜZELTİLMİŞ ORAN GÖRÜNÜMÜ ---
     with tab4:
         st.subheader("📈 Tahmin Takibi & Gelişmiş Sonuç / İstatistik Paneli")
         df_takip = takip_dosyasi_yukle()
@@ -385,7 +398,13 @@ if st.session_state.get('analiz_tamam', False):
         if len(df_takip) == 0:
             st.info("Kayıtlı veri bulunmuyor.")
         else:
-            tamamlananlar = df_takip[df_takip['Durum'] == 'Tamamlandı'].copy()
+            # Tablodaki eski hatalı oranları ekranda düzgün göstermek için formatlıyoruz
+            df_gosterge = df_takip.copy()
+            for oran_sutun in ['Banko_Oran', 'Ideal_Oran', 'IYMS_Oran', 'Surpriz_Oran']:
+                if oran_sutun in df_gosterge.columns:
+                    df_gosterge[oran_sutun] = df_gosterge[oran_sutun].apply(oran_duzelt)
+
+            tamamlananlar = df_gosterge[df_gosterge['Durum'] == 'Tamamlandı'].copy()
             b_hit, b_miss, i_hit, i_miss = 0, 0, 0, 0
             toplam_t = len(tamamlananlar)
             
@@ -412,7 +431,7 @@ if st.session_state.get('analiz_tamam', False):
             st.markdown("### 📝 Google Sheets Veritabanı Tablosu")
             def highlight_status(val):
                 return f"color: {'#1f77b4' if val == 'Bekliyor' else '#2ca02c'}; font-weight: bold"
-            st.dataframe(df_takip.style.map(highlight_status, subset=['Durum']), use_container_width=True)
+            st.dataframe(df_gosterge.style.map(highlight_status, subset=['Durum']), use_container_width=True)
             
             st.markdown("#### ⚽ Maç Sonucu, Skor ve Detaylı Saha İçi İstatistikleri Gir")
             bekleyenler = df_takip[df_takip['Durum'] == 'Bekliyor']
@@ -422,7 +441,6 @@ if st.session_state.get('analiz_tamam', False):
                 iy_skor_gir = c_s2.text_input("İY Skoru (Örn: 1-0):", value="0-0")
                 ms_skor_gir = c_s3.text_input("MS Skoru (Örn: 2-1):", value="1-1")
                 
-                # İstenen Korner, Şut, Kart giriş alanları eklendi
                 c_i1, c_i2, c_i3, c_btn = st.columns([1, 1, 1, 1.5])
                 korner_gir = c_i1.text_input("Toplam Korner:", value="9")
                 sut_gir = c_i2.text_input("Toplam Şut:", value="22")
@@ -433,7 +451,7 @@ if st.session_state.get('analiz_tamam', False):
                     df_takip.loc[df_takip['ID'] == secili_id, 'IY_Skor'] = iy_skor_gir
                     df_takip.loc[df_takip['ID'] == secili_id, 'MS_Skor'] = ms_skor_gir
                     df_takip.loc[df_takip['ID'] == secili_id, 'Korner'] = korner_gir
-                    df_takip.loc[df_takip['ID'] == secili_id, 'Sut'] = sut_gir
+                    df_takip.loc[df_takip['ID'] == secili_id, 'Sut'] = süt_gir if 'süt_gir' in locals() else sut_gir
                     df_takip.loc[df_takip['ID'] == secili_id, 'Kart'] = kart_gir
                     df_takip.loc[df_takip['ID'] == secili_id, 'Durum'] = 'Tamamlandı'
                     takip_dosyasi_kaydet(df_takip)
