@@ -10,13 +10,39 @@ warnings.filterwarnings('ignore')
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="MacApp Pro", page_icon="⚽", layout="wide")
 
-# --- YAPAY ZEKA MOTORU ---
+# --- YAPAY ZEKA MOTORU (YENİ VERİ SETİNE UYUMLANDI) ---
 @st.cache_resource
 def motoru_baslat():
+    # DOSYA ADINI BURAYA YAZIYORUZ (.csv, .zip veya .parquet hangisini kullanıyorsan uzantıya dikkat et)
     veri_yolu = "iddaa_arsiv_YEDEK.parquet" 
-    df = pd.read_parquet(veri_yolu)
-    df = df.dropna(subset=['pH', 'pD', 'pA', 'pOver', 'pKG', 'FTHG', 'FTAG', 'HTHG', 'HTAG', 'Open_H', 'Open_D', 'Open_A', 'Open_O25'])
-    features = ['pH', 'pD', 'pA', 'pOver', 'pKG']
+    df = pd.read_parquet(veri_yolu, low_memory=False)
+    
+    # 1. YENİ BAŞLIKLARI BİZİM SİSTEME TERCÜME EDİYORUZ
+    df['Mac'] = df['HomeTeam'] + " - " + df['AwayTeam']
+    df['res'] = df['FTR']  # FTR: Full Time Result (H, D, A)
+    df['tot'] = df['FTHG'] + df['FTAG']  # Toplam Gol
+    
+    df['Open_H'] = df['B365H']
+    df['Open_D'] = df['B365D']
+    df['Open_A'] = df['B365A']
+    df['Open_O25'] = df['B365>2.5']
+    
+    # 2. HAM ORANLARDAN SAF OLASILIKLARI YZ İÇİN OTOMATİK HESAPLIYORUZ
+    # Taraf Bahsi Marjı
+    margin = (1 / df['Open_H']) + (1 / df['Open_D']) + (1 / df['Open_A'])
+    df['pH'] = (1 / df['Open_H']) / margin
+    df['pD'] = (1 / df['Open_D']) / margin
+    df['pA'] = (1 / df['Open_A']) / margin
+    
+    # Alt/Üst Marjı
+    margin_ou = (1 / df['B365>2.5']) + (1 / df['B365<2.5'])
+    df['pOver'] = (1 / df['B365>2.5']) / margin_ou
+    
+    # 3. EKSİK VERİLERİ (Açılmamış Oranları) TEMİZLİYORUZ
+    df = df.dropna(subset=['pH', 'pD', 'pA', 'pOver', 'FTHG', 'FTAG', 'HTHG', 'HTAG', 'Open_H', 'Open_D', 'Open_A', 'Open_O25', 'res'])
+    
+    # Not: Yeni veride KG Var açılış oranı standart olmadığı için YZ modeli KG'ye değil 4 ana faktöre odaklanacak.
+    features = ['pH', 'pD', 'pA', 'pOver']
     X = df[features].values
     knn = NearestNeighbors(n_neighbors=50, metric='euclidean')
     knn.fit(X)
@@ -28,8 +54,8 @@ except Exception as e:
     st.error(f"Veri seti yüklenirken hata oluştu. Detay: {e}")
     st.stop()
 
-def analiz_et(ph, pd_oran, pa, pover, pkg):
-    sorgu = np.array([[ph, pd_oran, pa, pover, pkg]])
+def analiz_et(ph, pd_oran, pa, pover):
+    sorgu = np.array([[ph, pd_oran, pa, pover]])
     mesafeler, indeksler = knn.kneighbors(sorgu)
     hedef_maclar = df.iloc[indeksler[0]].copy()
     
@@ -119,8 +145,6 @@ def bulteni_kazi():
             if ms1_tag:
                 try:
                     ms1 = float(ms1_tag.text.strip().replace(',', '.'))
-                    
-                    # SENİN BULDUĞUN DOĞRU ETİKETLER (MSX ve AU2)
                     ms0_tag = row.find('a', class_='MSX')
                     ms2_tag = row.find('a', class_='MS2')
                     ust_tag = row.find('a', class_='AU2') 
@@ -128,7 +152,6 @@ def bulteni_kazi():
                     ms0 = float(ms0_tag.text.strip().replace(',', '.')) if ms0_tag and ms0_tag.text.strip() != '-' else 1.01
                     ms2 = float(ms2_tag.text.strip().replace(',', '.')) if ms2_tag and ms2_tag.text.strip() != '-' else 1.01
                     ust = float(ust_tag.text.strip().replace(',', '.')) if ust_tag and ust_tag.text.strip() != '-' else 1.01
-                    
                     kg = 1.50 
                     
                     if ms1 == 1.01 and ms0 == 1.01: 
@@ -143,8 +166,7 @@ def bulteni_kazi():
                     
                     cekilen_maclar[takim_adi] = {"ms1": ms1, "ms0": ms0, "ms2": ms2, "ust": ust, "kg": kg}
                     basarili_veri += 1
-                    
-                except Exception as inner_e:
+                except Exception:
                     continue
                     
         if basarili_veri == 0:
@@ -153,16 +175,14 @@ def bulteni_kazi():
     except Exception as e:
         st.sidebar.warning(f"⚠️ Mackolik'ten şu an canlı veri çekilemedi. Yedek bülten devrede.")
         cekilen_maclar.update({
-            "🔴 (Yedek) Galatasaray - Fenerbahçe": {"ms1": 2.10, "ms0": 3.20, "ms2": 2.60, "ust": 1.75, "kg": 1.55},
-            "🔴 (Yedek) Real Madrid - Barcelona": {"ms1": 1.85, "ms0": 3.40, "ms2": 3.10, "ust": 1.50, "kg": 1.45},
-            "🔴 (Yedek) Arsenal - Man City": {"ms1": 2.80, "ms0": 3.30, "ms2": 2.05, "ust": 1.65, "kg": 1.50}
+            "🔴 (Yedek) Galatasaray - Fenerbahçe": {"ms1": 2.10, "ms0": 3.20, "ms2": 2.60, "ust": 1.75, "kg": 1.55}
         })
         
     return cekilen_maclar
 
 # --- WEB ARAYÜZÜ (UI) ---
 st.title("⚽ MacApp Pro | Analiz & Yatırım Terminali")
-st.markdown(f"*(**{len(df)}** maçlık makine öğrenmesi veritabanı aktif)*")
+st.markdown(f"*(**{len(df)}** maçlık devasa makine öğrenmesi veritabanı aktif)*")
 
 st.sidebar.header("🌐 Canlı Bülten (Mackolik)")
 guncel_bulten = bulteni_kazi()
@@ -191,11 +211,11 @@ ph_gercek = (1 / ms1_oran) / taraf_marj
 pd_gercek = (1 / ms0_oran) / taraf_marj
 pa_gercek = (1 / ms2_oran) / taraf_marj
 pover_gercek = (1 / ust_oran) / 1.07
-pkg_gercek = (1 / kg_oran) / 1.07
 
 if st.sidebar.button("🔍 Yapay Zeka Analizini Başlat", use_container_width=True):
     with st.spinner("MacApp geçmiş verileri tarıyor ve simülasyonları çalıştırıyor..."):
-        ms, kg, ust, yildizlar, benzer_maclar, iy_ms = analiz_et(ph_gercek, pd_gercek, pa_gercek, pover_gercek, pkg_gercek)
+        # YZ artık 4 boyutlu vektör kullanıyor (pKG çıkarıldı)
+        ms, kg, ust, yildizlar, benzer_maclar, iy_ms = analiz_et(ph_gercek, pd_gercek, pa_gercek, pover_gercek)
         
         st.session_state['analiz_tamam'] = True
         st.session_state['ms'] = ms
@@ -207,7 +227,6 @@ if st.sidebar.button("🔍 Yapay Zeka Analizini Başlat", use_container_width=Tr
         st.session_state['secilen_mac_baslik'] = secilen_mac
 
 if st.session_state.get('analiz_tamam', False):
-    
     ms = st.session_state['ms']
     kg = st.session_state['kg']
     ust = st.session_state['ust']
