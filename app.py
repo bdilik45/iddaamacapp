@@ -13,25 +13,23 @@ st.set_page_config(page_title="MacApp Pro", page_icon="⚽", layout="wide")
 # --- YAPAY ZEKA MOTORU (YENİ VERİ SETİNE UYUMLANDI) ---
 @st.cache_resource
 def motoru_baslat():
-    # DOSYA ADINI BURAYA YAZIYORUZ (.csv, .zip veya .parquet hangisini kullanıyorsan uzantıya dikkat et)
     veri_yolu = "iddaa_arsiv_YEDEK.parquet" 
     df = pd.read_parquet(veri_yolu)
     
-# 🔴 TARİH HATALARINA KARŞI KUSURSUZ TEMİZLİK (Takım, Skor ve Oranlar aynıysa kopyadır)
-    df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'Open_H', 'Open_D'])
-    
-    # 1. YENİ BAŞLIKLARI BİZİM SİSTEME TERCÜME EDİYORUZ
+    # 1. ÖNCE YENİ BAŞLIKLARI BİZİM SİSTEME TERCÜME EDİYORUZ
     df['Mac'] = df['HomeTeam'] + " - " + df['AwayTeam']
-    df['res'] = df['FTR']  # FTR: Full Time Result (H, D, A)
-    df['tot'] = df['FTHG'] + df['FTAG']  # Toplam Gol
+    df['res'] = df['FTR']  
+    df['tot'] = df['FTHG'] + df['FTAG']  
     
     df['Open_H'] = df['B365H']
     df['Open_D'] = df['B365D']
     df['Open_A'] = df['B365A']
     df['Open_O25'] = df['B365>2.5']
     
-    # 2. HAM ORANLARDAN SAF OLASILIKLARI YZ İÇİN OTOMATİK HESAPLIYORUZ
-    # Taraf Bahsi Marjı
+    # 2. ŞİMDİ KUSURSUZ TEMİZLİĞİ YAPIYORUZ (Çünkü artık Open_H'nin ne olduğunu biliyor)
+    df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'Open_H', 'Open_D'])
+    
+    # Ham oranlardan saf olasılık hesaplama
     margin = (1 / df['Open_H']) + (1 / df['Open_D']) + (1 / df['Open_A'])
     df['pH'] = (1 / df['Open_H']) / margin
     df['pD'] = (1 / df['Open_D']) / margin
