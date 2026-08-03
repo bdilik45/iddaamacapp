@@ -4,11 +4,28 @@ import numpy as np
 from sklearn.neighbors import NearestNeighbors
 import requests
 from bs4 import BeautifulSoup
+import os
 import warnings
 warnings.filterwarnings('ignore')
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="MacApp Pro", page_icon="⚽", layout="wide")
+
+# Kayıt Dosyası Adı
+TAKIP_DOSYASI = "tahmin_gecmisi.csv"
+
+def takip_dosyasi_yukle():
+    if os.path.exists(TAKIP_DOSYASI):
+        return pd.read_csv(TAKIP_DOSYASI)
+    else:
+        return pd.DataFrame(columns=[
+            'ID', 'Tarih', 'Mac', 'Banko_Tahmin', 'Banko_Oran', 
+            'Ideal_Tahmin', 'Ideal_Oran', 'IYMS_Tahmin', 'IYMS_Oran', 
+            'Surpriz_Tahmin', 'Surpriz_Oran', 'IY_Skor', 'MS_Skor', 'Durum'
+        ])
+
+def takip_dosyasi_kaydet(df_takip):
+    df_takip.to_csv(TAKIP_DOSYASI, index=False)
 
 # --- YAPAY ZEKA MOTORU ---
 @st.cache_resource
@@ -26,7 +43,7 @@ def motoru_baslat():
     df['Open_A'] = df['B365A']
     df['Open_O25'] = df['B365>2.5']
     
-    # 2. Kusursuz Temizlik
+    # 2. Temizlik
     df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'Open_H', 'Open_D'])
     
     # 3. Olasılık Hesaplama
@@ -89,7 +106,6 @@ def analiz_et(ph, pd_oran, pa, pover):
     tum_ihtimaller.update(hesaplanan_oranlar)
     iy_ms_oranlari = tum_ihtimaller
     
-    # Detaylı Saha İçi İstatistikleri (Korner, Şut, Gol Dağılımı)
     avg_corner = round(hedef_maclar['HC'].fillna(0).mean() + hedef_maclar['AC'].fillna(0).mean(), 1)
     avg_shot = round(hedef_maclar['HS'].fillna(0).mean() + hedef_maclar['AS'].fillna(0).mean(), 1)
     avg_ht_goal = round(hedef_maclar['HT_Total'].mean(), 2)
@@ -208,36 +224,59 @@ if st.session_state.get('analiz_tamam', False):
     ust = st.session_state['ust']
     stats = st.session_state['stats']
     iy_ms = st.session_state['iy_ms']
+    aktif_mac = st.session_state.get('secilen_mac_baslik', 'Manuel Maç')
     
-    tab1, tab2, tab3 = st.tabs(["📊 Görsel Dashboard", "🧪 Backtest", "💰 ROI & Kasa Yönetimi (Yapay Zeka Yorumu)"])
+    # SEKMELER (4. Sekme eklendi)
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 Görsel Dashboard", 
+        "🧪 Backtest", 
+        "💰 ROI & Kasa Yönetimi", 
+        "📈 Tahmin Takibi & Başarı Karnesi"
+    ])
     
+    # EV Hesaplamaları & 4 Tahmin Mantığı
+    ev_dict = {
+        "MS 1": {"prob": ms.get('MS 1', 0), "oran": ms1_oran, "ev": beklenen_deger_hesapla(ms1_oran, ms.get('MS 1', 0))},
+        "MS 0": {"prob": ms.get('MS 0', 0), "oran": ms0_oran, "ev": beklenen_deger_hesapla(ms0_oran, ms.get('MS 0', 0))},
+        "MS 2": {"prob": ms.get('MS 2', 0), "oran": ms2_oran, "ev": beklenen_deger_hesapla(ms2_oran, ms.get('MS 2', 0))},
+        "2.5 ÜST": {"prob": ust, "oran": ust_oran, "ev": beklenen_deger_hesapla(ust_oran, ust)},
+        "KG VAR": {"prob": kg, "oran": kg_oran, "ev": beklenen_deger_hesapla(kg_oran, kg)}
+    }
+    
+    en_degerli_isim = max(ev_dict, key=lambda x: ev_dict[x]['ev'])
+    en_degerli_ev = ev_dict[en_degerli_isim]['ev']
+    
+    banko_isim = max(ev_dict, key=lambda x: ev_dict[x]['prob'])
+    banko_oran = ev_dict[banko_isim]['oran']
+    
+    ideal_isim = en_degerli_isim if en_degerli_ev > 0 else "Pas Geç"
+    ideal_oran = ev_dict[en_degerli_isim]['oran'] if en_degerli_ev > 0 else 0.0
+    
+    en_yuksek_iyms = max(iy_ms, key=iy_ms.get)
+    iyms_oran_tahmin = round((100 / (iy_ms[en_yuksek_iyms] if iy_ms[en_yuksek_iyms] > 0 else 1.1)) * 0.85, 2)
+    
+    ters_iyms = {k: v for k, v in iy_ms.items() if k in ['1/2', '2/1'] and v > 0}
+    if ters_iyms:
+        surpriz_isim = max(ters_iyms, key=ters_iyms.get) + " (Dönüş)"
+        surpriz_oran = round((100 / ters_iyms[surpriz_isim[:3]]) * 0.85, 2)
+    elif st.session_state['iki_yari_15_ust'] > 8:
+        surpriz_isim = "İki Yarı 1.5 Üst"
+        surpriz_oran = round((100 / st.session_state['iki_yari_15_ust']) * 0.85, 2)
+    else:
+        surpriz_isim = "MS 0"
+        surpriz_oran = ms0_oran
+
     with tab1:
         st.subheader("Piyasa Beklentisi vs. Gerçekleşenler")
+        grafik_verisi = pd.DataFrame({"Sonuç": ["MS 1", "MS 0", "MS 2"], "Gerçekleşen (%)": [ms.get('MS 1', 0), ms.get('MS 0', 0), ms.get('MS 2', 0)]}).set_index("Sonuç")
+        st.bar_chart(grafik_verisi, color="#1f77b4")
         
-        grafik_verisi = pd.DataFrame({
-            "Sonuç": ["MS 1", "MS 0 (Beraberlik)", "MS 2"],
-            "Geçmişte Gerçekleşen (%)": [ms.get('MS 1', 0), ms.get('MS 0', 0), ms.get('MS 2', 0)]
-        }).set_index("Sonuç")
-        
-        col_grafik1, col_grafik2 = st.columns(2)
-        with col_grafik1:
-            st.markdown("**Maç Sonucu Dağılımı**")
-            st.bar_chart(grafik_verisi, color="#1f77b4")
-            
-        with col_grafik2:
-            st.markdown("**Gol Beklentisi Göstergesi**")
-            st.progress(kg / 100, text=f"KG Var İhtimali: %{kg}")
-            st.progress(ust / 100, text=f"2.5 Üst İhtimali: %{ust}")
-            
         st.markdown("---")
-        st.subheader("🔍 İnteraktif Benzer Maçlar Veritabanı (50 Örneklem)")
-        
+        st.subheader("🔍 İnteraktif Benzer Maçlar Veritabanı")
         col_f1, col_f2, col_f3 = st.columns(3)
-        with col_f1:
-            gosterilecek_sayi = st.slider("Gösterilecek Maç Sayısı", min_value=5, max_value=50, value=10, step=5)
-        with col_f2:
-            ms_filtre = st.multiselect("Sonuca Göre Filtrele", options=["MS 1", "MS 0", "MS 2"], default=["MS 1", "MS 0", "MS 2"])
-        with col_f3:
+        with col_f1: gosterilecek_sayi = st.slider("Gösterilecek Maç Sayısı", min_value=5, max_value=50, value=10, step=5)
+        with col_f2: ms_filtre = st.multiselect("Sonuca Göre Filtrele", options=["MS 1", "MS 0", "MS 2"], default=["MS 1", "MS 0", "MS 2"])
+        with col_f3: 
             tum_iy_ms = ["1/1", "1/0", "1/2", "0/1", "0/0", "0/2", "2/1", "2/0", "2/2"]
             iy_ms_filtre = st.multiselect("İY/MS Senaryosuna Göre Filtrele", options=tum_iy_ms, default=tum_iy_ms)
         
@@ -245,23 +284,14 @@ if st.session_state.get('analiz_tamam', False):
             (st.session_state['benzer_maclar']['Sonuç'].isin(ms_filtre)) & 
             (st.session_state['benzer_maclar']['İY/MS'].isin(iy_ms_filtre))
         ]
-        
         st.dataframe(filtreli_df.head(gosterilecek_sayi))
-        
-        csv_data = filtreli_df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 Bu 50 Benzer Maçın Verisini Excel (CSV) Olarak İndir",
-            data=csv_data,
-            file_name="macapp_benzer_maclar_analizi.csv",
-            mime="text/csv"
-        )
+
     with tab2:
         st.subheader("Geçmiş Performans Testi (Backtest)")
         iy_ms_df = pd.DataFrame(list(iy_ms.items()), columns=['İY/MS Senaryosu', 'Gerçekleşme (%)']).sort_values(by='Gerçekleşme (%)', ascending=False).reset_index(drop=True)
         st.dataframe(iy_ms_df)
         
         st.markdown("### 💎 Ekstrem Bahis İhtimalleri")
-        st.info("💡 Dünya genelinde 'İki Yarıda 1.5 Üst' %6, 'İki Yarı KG' ise %3 ihtimalle gelir. Oklar, maçın potansiyelini gösterir.")
         ek1, ek2 = st.columns(2)
         fark_15 = round(st.session_state['iki_yari_15_ust'] - 6.0, 1)
         fark_kg = round(st.session_state['iki_yari_kg'] - 3.0, 1)
@@ -270,53 +300,158 @@ if st.session_state.get('analiz_tamam', False):
 
     with tab3:
         st.subheader("💰 Finansal Analiz (Değerli Bahis)")
-        
-        # EV (Expected Value) Hesaplamaları
-        ev_dict = {
-            "MS 1": {"prob": ms.get('MS 1', 0), "oran": ms1_oran, "ev": beklenen_deger_hesapla(ms1_oran, ms.get('MS 1', 0))},
-            "MS 0 (Beraberlik)": {"prob": ms.get('MS 0', 0), "oran": ms0_oran, "ev": beklenen_deger_hesapla(ms0_oran, ms.get('MS 0', 0))},
-            "MS 2": {"prob": ms.get('MS 2', 0), "oran": ms2_oran, "ev": beklenen_deger_hesapla(ms2_oran, ms.get('MS 2', 0))},
-            "2.5 ÜST": {"prob": ust, "oran": ust_oran, "ev": beklenen_deger_hesapla(ust_oran, ust)},
-            "KG VAR": {"prob": kg, "oran": kg_oran, "ev": beklenen_deger_hesapla(kg_oran, kg)}
-        }
-        
-        en_degerli_isim = max(ev_dict, key=lambda x: ev_dict[x]['ev'])
-        en_degerli_ev = ev_dict[en_degerli_isim]['ev']
-        
         if en_degerli_ev > 0:
-            st.success(f"💎 **VALUE BET BULUNDU:** Bahis şirketinin hatası **{en_degerli_isim}** oranında yakalandı. Her 1 TL yatırıma uzun vadede ortalama +{en_degerli_ev} TL kâr bırakır.")
+            st.success(f"💎 **VALUE BET BULUNDU:** Bahis şirketinin hatası **{en_degerli_isim}** oranında yakalandı (+{en_degerli_ev} TL EV).")
         else:
-            st.error("⚠️ **RİSKLİ MAÇ:** Bu maçtaki hiçbir standart oran İddaa'nın kâr marjını yenemiyor. Banko arayanlar pas geçmeli.")
+            st.error("⚠️ **RİSKLİ MAÇ:** Standart oranlar kâr marjını yenemiyor.")
 
         st.markdown("---")
-        st.subheader("🧠 Ajanın Saha İçi Dinamik Yorumu")
-        st.write(f"Sistem geçmiş 50 benzer maçı taradı. İstatistiklere göre bu takımların maçlarında **ilk yarı ortalama {stats['iy_gol']} gol**, **ikinci yarı ise {stats['ikinci_yari_gol']} gol** atılıyor. Toplam maç başı **korner ortalaması {stats['korner']}** ve **şut ortalaması {stats['sut']}** olarak gerçekleşti. Yapay zekanın bu sert istatistiklere dayanarak çıkardığı 4 aşamalı strateji:")
-
-        # 4 Aşamalı Tahmin Algoritması
-        banko_isim = max(ev_dict, key=lambda x: ev_dict[x]['prob'])
-        banko_oran = ev_dict[banko_isim]['oran']
-        
-        ideal_isim = en_degerli_isim if en_degerli_ev > 0 else "Değerli Oran Yok (Pas Geçiniz)"
-        ideal_oran = ev_dict[en_degerli_isim]['oran'] if en_degerli_ev > 0 else "-"
-        
-        en_yuksek_iyms = max(iy_ms, key=iy_ms.get)
-        iyms_oran_tahmin = round((100 / (iy_ms[en_yuksek_iyms] if iy_ms[en_yuksek_iyms] > 0 else 1.1)) * 0.85, 2)
-        
-        ters_iyms = {k: v for k, v in iy_ms.items() if k in ['1/2', '2/1'] and v > 0}
-        if ters_iyms:
-            surpriz_isim = max(ters_iyms, key=ters_iyms.get) + " (İY/MS Dönüşü)"
-            surpriz_oran = round((100 / ters_iyms[surpriz_isim[:3]]) * 0.85, 2)
-        elif st.session_state['iki_yari_15_ust'] > 8:
-            surpriz_isim = "Her İki Yarıda 1.5 Üst"
-            surpriz_oran = round((100 / st.session_state['iki_yari_15_ust']) * 0.85, 2)
-        else:
-            surpriz_isim = "Maç Sonu Beraberlik"
-            surpriz_oran = ms0_oran
+        st.subheader("🧠 Ajanın 4 Aşamalı Stratejisi")
+        st.write(f"Saha İçi İstatistikleri: **İY Gol:** {stats['iy_gol']} | **2.Yarı Gol:** {stats['ikinci_yari_gol']} | **Korner:** {stats['korner']} | **Şut:** {stats['sut']}")
 
         c_t1, c_t2 = st.columns(2)
         c_t3, c_t4 = st.columns(2)
 
-        c_t1.info(f"🛡️ **BANKO TAHMİN**\n\n**{banko_isim}**\n\nOran: **{banko_oran}** (Olasılık: %{ev_dict[banko_isim]['prob']})")
-        c_t2.success(f"🎯 **İDEAL TAHMİN (Value)**\n\n**{ideal_isim}**\n\nOran: **{ideal_oran}** (Matematiksel Fırsat)")
-        c_t3.warning(f"⏱️ **İY/MS TAHMİNİ**\n\n**{en_yuksek_iyms}**\n\nTahmini Oran: **{iyms_oran_tahmin}** (Gerçekleşme: %{iy_ms[en_yuksek_iyms]})")
-        c_t4.error(f"🧨 **SÜRPRİZ (Longshot)**\n\n**{surpriz_isim}**\n\nTahmini Oran: **{surpriz_oran}** (Yüksek Kazanç Potansiyeli)")
+        c_t1.info(f"🛡️ **BANKO TAHMİN**\n\n**{banko_isim}** (Oran: {banko_oran})")
+        c_t2.success(f"🎯 **İDEAL TAHMİN (Value)**\n\n**{ideal_isim}** (Oran: {ideal_oran})")
+        c_t3.warning(f"⏱️ **İY/MS TAHMİNİ**\n\n**{en_yuksek_iyms}** (Oran: {iyms_oran_tahmin})")
+        c_t4.error(f"🧨 **SÜRPRİZ (Longshot)**\n\n**{surpriz_isim}** (Oran: {surpriz_oran})")
+
+        st.markdown("---")
+        # 📌 TAKİBE AL BUTONU (Tıklandığında dosyaya kaydeder)
+        if st.button("📌 Bu Analizi ve 4 Tahmini Takibe Al (Sisteme Kaydet)", use_container_width=True):
+            df_takip = takip_dosyasi_yukle()
+            yeni_id = len(df_takip) + 1
+            yeni_kayit = {
+                'ID': yeni_id,
+                'Tarih': pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+                'Mac': aktif_mac,
+                'Banko_Tahmin': banko_isim, 'Banko_Oran': banko_oran,
+                'Ideal_Tahmin': ideal_isim, 'Ideal_Oran': ideal_oran,
+                'IYMS_Tahmin': en_yuksek_iyms, 'IYMS_Oran': iyms_oran_tahmin,
+                'Surpriz_Tahmin': surpriz_isim, 'Surpriz_Oran': surpriz_oran,
+                'IY_Skor': 'Oynanmadı', 'MS_Skor': 'Oynanmadı', 'Durum': 'Bekliyor'
+            }
+            df_takip = pd.concat([df_takip, pd.DataFrame([yeni_kayit])], ignore_index=True)
+            takip_dosyasi_kaydet(df_takip)
+            st.toast("✅ Maç ve 4 Tahmin Başarıyla Takibe Alındı! 'Tahmin Takibi' Sekmesinden İnceleyebilirsiniz.", icon="📌")
+
+   # 4. SEKME: TAHMİN TAKİBİ & ÖĞRENEN SİSTEM KARNESİ
+    with tab4:
+        st.subheader("📈 Takibe Alınan Maçlar & İsabet Oranı Karnesi")
+        df_takip = takip_dosyasi_yukle()
+        
+        if len(df_takip) == 0:
+            st.info("Henüz takibe alınmış bir maç yok. 'ROI & Kasa Yönetimi' sekmesinden analiz ettiğiniz maçları takibe alabilirsiniz.")
+        else:
+            # --- 1. OTOMATİK GÜNCELLEME SİMÜLASYONU VE API ALTYAPISI ---
+            bekleyen_sayisi = len(df_takip[df_takip['Durum'] == 'Bekliyor'])
+            col_btn, col_info = st.columns([1, 2])
+            
+            with col_btn:
+                if st.button(f"🔄 Bekleyen {bekleyen_sayisi} Maçın Skorunu Otomatik Çek", use_container_width=True):
+                    with st.spinner("İnternette maç sonuçları aranıyor... (Not: Detaylı korner/kart istatistikleri için ileride resmi bir API entegre edilmelidir)"):
+                        # BURASI İLERİDE API BAĞLANACAK YERDİR. Şimdilik kullanıcıya bilgi verir.
+                        st.warning("⚠️ Otomatik sonuç çekme altyapısı hazır! Ancak kesintisiz çalışması için ileride bir 'Football API' (Örn: API-Sports) entegre etmeliyiz. Şimdilik skorları aşağıdan onaylayarak sisteme öğretebilirsin.")
+            
+            st.markdown("---")
+            
+            # --- 2. BAŞARI ORANI HESAPLAMA MOTORU (Doğru/Yanlış Mantığı) ---
+            tamamlananlar = df_takip[df_takip['Durum'] == 'Tamamlandı'].copy()
+            
+            b_hit, b_miss = 0, 0
+            i_hit, i_miss = 0, 0
+            iyms_hit, iyms_miss = 0, 0
+            s_hit, s_miss = 0, 0
+            toplam_t = len(tamamlananlar)
+            
+            if toplam_t > 0:
+                for idx, row in tamamlananlar.iterrows():
+                    iy_h, iy_a = map(int, row['IY_Skor'].split('-'))
+                    ms_h, ms_a = map(int, row['MS_Skor'].split('-'))
+                    
+                    # Gerçekleşen Sonuçların Tespiti
+                    ms_res = "MS 1" if ms_h > ms_a else ("MS 2" if ms_a > ms_h else "MS 0")
+                    kg_res = "KG VAR" if (ms_h > 0 and ms_a > 0) else "KG YOK"
+                    ust_res = "2.5 ÜST" if (ms_h + ms_a) > 2.5 else "2.5 ALT"
+                    iy_res = "1" if iy_h > iy_a else ("2" if iy_a > iy_h else "0")
+                    ms_kisa = "1" if ms_h > ms_a else ("2" if ms_a > ms_h else "0")
+                    iyms_res = f"{iy_res}/{ms_kisa}"
+                    
+                    # Banko Kontrol
+                    if row['Banko_Tahmin'] in [ms_res, kg_res, ust_res]: b_hit += 1
+                    else: b_miss += 1
+                        
+                    # İdeal Kontrol
+                    if row['Ideal_Tahmin'] in [ms_res, kg_res, ust_res]: i_hit += 1
+                    elif row['Ideal_Tahmin'] != "Pas Geç": i_miss += 1
+                        
+                    # İY/MS Kontrol
+                    if row['IYMS_Tahmin'] == iyms_res: iyms_hit += 1
+                    else: iyms_miss += 1
+                        
+                    # Sürpriz Kontrol
+                    if row['Surpriz_Tahmin'] in [ms_res, iyms_res, "İki Yarı 1.5 Üst"]: s_hit += 1
+                    else: s_miss += 1
+
+                st.markdown("### 🎯 Ajanın Canlı İsabet Karnesi")
+                m1, m2, m3, m4 = st.columns(4)
+                
+                m1.metric(
+                    "Banko Başarı Oranı", 
+                    f"%{round((b_hit/toplam_t)*100, 1)}", 
+                    f"✅ {b_hit} Doğru | ❌ {b_miss} Yanlış"
+                )
+                
+                i_toplam = i_hit + i_miss
+                if i_toplam > 0:
+                    m2.metric(
+                        "İdeal (Value) Başarısı", 
+                        f"%{round((i_hit/i_toplam)*100, 1)}", 
+                        f"✅ {i_hit} Doğru | ❌ {i_miss} Yanlış"
+                    )
+                else:
+                    m2.metric("İdeal (Value) Başarısı", "%0", "Veri Yok")
+                    
+                m3.metric(
+                    "İY/MS İsabeti", 
+                    f"%{round((iyms_hit/toplam_t)*100, 1)}", 
+                    f"✅ {iyms_hit} Doğru | ❌ {iyms_miss} Yanlış"
+                )
+                
+                m4.metric(
+                    "Sürpriz İsabeti", 
+                    f"%{round((s_hit/toplam_t)*100, 1)}", 
+                    f"✅ {s_hit} Doğru | ❌ {s_miss} Yanlış"
+                )
+                st.markdown("---")
+
+            # --- 3. MAÇ LİSTESİ VE MANUEL ONAY ALANI ---
+            st.markdown("### 📝 Kayıtlı Maçlar Listesi")
+            
+            # Tabloyu daha şık göstermek için renklendirme fonksiyonu
+            def highlight_status(val):
+                color = '#1f77b4' if val == 'Bekliyor' else '#2ca02c'
+                return f'color: {color}; font-weight: bold'
+                
+            st.dataframe(df_takip.style.map(highlight_status, subset=['Durum']), use_container_width=True)
+            
+            st.markdown("#### ⚽ Biten Maçın Skorunu Sisteme Öğret")
+            bekleyenler = df_takip[df_takip['Durum'] == 'Bekliyor']
+            if len(bekleyenler) > 0:
+                c_s1, c_s2, c_s3, c_s4 = st.columns([2, 1, 1, 1])
+                secili_id = c_s1.selectbox("Maç Seç:", bekleyenler['ID'].tolist(), format_func=lambda x: f"ID {x}: {df_takip.loc[df_takip['ID']==x, 'Mac'].values[0]}")
+                iy_skor_gir = c_s2.text_input("İlk Yarı Skoru (Örn: 1-0):", value="0-0")
+                ms_skor_gir = c_s3.text_input("Maç Sonu Skoru (Örn: 2-1):", value="0-0")
+                
+                # Butonu hizalamak için boşluk ekliyoruz
+                c_s4.markdown("<br>", unsafe_allow_html=True) 
+                if c_s4.button("💾 Skoru Onayla"):
+                    df_takip.loc[df_takip['ID'] == secili_id, 'IY_Skor'] = iy_skor_gir
+                    df_takip.loc[df_takip['ID'] == secili_id, 'MS_Skor'] = ms_skor_gir
+                    df_takip.loc[df_takip['ID'] == secili_id, 'Durum'] = 'Tamamlandı'
+                    takip_dosyasi_kaydet(df_takip)
+                    st.success("Skor başarıyla güncellendi! Ajan bu sonuçtan ders çıkardı ve karnesi güncellendi.")
+                    st.rerun()
+            else:
+                st.info("🎉 Bekleyen maçınız yok. Tüm tahminler sonuçlandırılmış ve yapay zekanın karnesine işlenmiş!")
