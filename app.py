@@ -14,7 +14,7 @@ st.set_page_config(page_title="MacApp Pro", page_icon="⚽", layout="wide")
 @st.cache_resource
 def motoru_baslat():
     veri_yolu = "iddaa_arsiv_YEDEK.parquet" 
-    df = pd.read_csv(veri_yolu)
+    df = pd.read_parquet(veri_yolu)
     df = df.dropna(subset=['pH', 'pD', 'pA', 'pOver', 'pKG', 'FTHG', 'FTAG', 'HTHG', 'HTAG', 'Open_H', 'Open_D', 'Open_A', 'Open_O25'])
     features = ['pH', 'pD', 'pA', 'pOver', 'pKG']
     X = df[features].values
