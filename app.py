@@ -152,6 +152,13 @@ def analiz_et(ph, pd_oran, pa, pover):
     sh_kg_serisi = (hedef_maclar['SH_Home'] > 0) & (hedef_maclar['SH_Away'] > 0)
     iki_yari_kg_yuzdesi = round((ht_kg_serisi & sh_kg_serisi).mean() * 100 * 1.8, 1)
     
+    # Fark (Delta) Hesaplamaları (Normal maça göre sapma)
+    genel_iki_yari_15_ortalama = round(df['HT_Total'].ge(2).mean() * df['SH_Total'].ge(2).mean() * 100 * 1.4, 1)
+    genel_iki_yari_kg_ortalama = round(((df['HTHG'] > 0) & (df['HTAG'] > 0) & ((df['FTHG'] - df['HTHG']) > 0) & ((df['FTAG'] - df['HTAG']) > 0)).mean() * 100 * 1.8, 1)
+    
+    fark_iki_yari_15 = round(iki_yari_15_ust_yuzdesi - genel_iki_yari_15_ortalama, 1)
+    fark_iki_yari_kg = round(iki_yari_kg_yuzdesi - genel_iki_yari_kg_ortalama, 1)
+
     hedef_maclar['IY_Kod'] = np.where(hedef_maclar['HTHG'] > hedef_maclar['HTAG'], '1', 
                              np.where(hedef_maclar['HTHG'] < hedef_maclar['HTAG'], '2', '0'))
     ms_kisa_map = {'H': '1', 'D': '0', 'A': '2'}
@@ -184,8 +191,7 @@ def analiz_et(ph, pd_oran, pa, pover):
     tablo_df['Maç Sonu Skoru'] = tablo_df['FTHG'].astype(str) + " - " + tablo_df['FTAG'].astype(str)
     tablo_df = tablo_df.rename(columns={'Date': 'Tarih', 'Mac': 'Maç', 'Open_H': 'Oran 1', 'Open_D': 'Oran X', 'Open_A': 'Oran 2', 'Open_O25': 'Oran Üst', 'MS_Kod': 'Sonuç', 'IY_MS': 'İY/MS'})[['Tarih', 'Maç', 'Oran 1', 'Oran X', 'Oran 2', 'Oran Üst', 'İlk Yarı Skoru', 'Maç Sonu Skoru', 'Sonuç', 'İY/MS']]
 
-    # 🔴 Doğru sırayla dışarıya aktarılıyor
-    return ms_oranlari, kg_yuzdesi, ust_yuzdesi, tablo_df, iy_ms_oranlari, iki_yari_15_ust_yuzdesi, iki_yari_kg_yuzdesi, stats
+    return ms_oranlari, kg_yuzdesi, ust_yuzdesi, tablo_df, iy_ms_oranlari, iki_yari_15_ust_yuzdesi, iki_yari_kg_yuzdesi, fark_iki_yari_15, fark_iki_yari_kg, stats
 
 def beklenen_deger_hesapla(oran, ihtimal_yuzdesi):
     ihtimal = ihtimal_yuzdesi / 100
@@ -260,12 +266,11 @@ pover_gercek = (1 / ust_oran) / 1.06
 
 if st.sidebar.button("🚀 Yapay Zeka Analizini Başlat", use_container_width=True):
     with st.spinner("Model benzer tarihi maçları tarıyor ve risk hesaplıyor..."):
-        # 🔴 Doğru sırayla değişkenlere atanıyor
-        ms, kg_yuzdesi, ust_yuzdesi, benzer_maclar, iy_ms, iki_yari_15_ust, iki_yari_kg, stats = analiz_et(ph_gercek, pd_gercek, pa_gercek, pover_gercek)
+        ms, kg_yuzdesi, ust_yuzdesi, benzer_maclar, iy_ms, iki_yari_15_ust, iki_yari_kg, fark_15, fark_kg, stats = analiz_et(ph_gercek, pd_gercek, pa_gercek, pover_gercek)
         st.session_state.update({
             'analiz_tamam': True, 'ms': ms, 'kg_yuzdesi': kg_yuzdesi, 'ust_yuzdesi': ust_yuzdesi,
             'benzer_maclar': benzer_maclar, 'iy_ms': iy_ms, 'iki_yari_15_ust': iki_yari_15_ust,
-            'iki_yari_kg': iki_yari_kg, 'stats': stats, 'secilen_mac_baslik': secilen_mac
+            'iki_yari_kg': iki_yari_kg, 'fark_15': fark_15, 'fark_kg': fark_kg, 'stats': stats, 'secilen_mac_baslik': secilen_mac
         })
 
 if st.session_state.get('analiz_tamam', False):
@@ -276,9 +281,9 @@ if st.session_state.get('analiz_tamam', False):
     iy_ms = st.session_state['iy_ms']
     aktif_mac = st.session_state.get('secilen_mac_baslik', 'Özel Maç')
     
-    tab1, tab2, tab3, tab4 = st.tabs([
+    # Artık 3 ana sekme var (Backtest ana dashboard'a taşındı)
+    tab1, tab2, tab3 = st.tabs([
         "📊 Görsel Trading Dashboard", 
-        "🧪 Backtest & Senaryolar", 
         "💰 ROI & Value Bet Analizi", 
         "📈 Tahmin Takibi & Öğrenen Karne"
     ])
@@ -314,7 +319,7 @@ if st.session_state.get('analiz_tamam', False):
         surpriz_isim = "MS 0"
         surpriz_oran = ms0_oran
 
-    # --- TAB 1: DASHBOARD ---
+    # --- TAB 1: DASHBOARD (Geliştirilmiş & Tüm Senaryoları İçeren Ana Ekran) ---
     with tab1:
         st.subheader("🎯 Olasılık Dağılımı ve Piyasa Analizi")
         
@@ -336,26 +341,37 @@ if st.session_state.get('analiz_tamam', False):
             st.info(f"⚡ **Beklenen Şut:** {stats['sut']} Şut\n\n🚩 **Beklenen Korner:** {stats['korner']} Korner\n\n⏱️ **İlk Yarı Gol:** {stats['iy_gol']} | **2. Yarı Gol:** {stats['ikinci_yari_gol']}")
 
         st.markdown("---")
-        st.subheader("🔍 Benzer Maçlar Arşiv Filtresi")
-        col_f1, col_f2 = st.columns(2)
-        with col_f1: ms_filtre = st.multiselect("Sonuç Filtrele", options=["MS 1", "MS 0", "MS 2"], default=["MS 1", "MS 0", "MS 2"])
-        with col_f2: goster_sayi = st.slider("Kayıt Sayısı", 5, 30, 10, 5)
+        st.subheader("🧪 İY/MS Matrisi & İki Yarı Özel Karşılaştırma Farkları")
         
-        filtreli_df = st.session_state['benzer_maclar'][st.session_state['benzer_maclar']['Sonuç'].isin(ms_filtre)]
+        # Fark (Delta) Metrikleri Gösterimi
+        f_col1, f_col2 = st.columns(2)
+        f_col1.metric("İki Yarıda da 1.5 Üst Olasılığı", f"%{st.session_state['iki_yari_15_ust']}", f"{st.session_state['fark_15']:+.1f}% (Genel Ortalamaya Göre Fark)")
+        f_col2.metric("İki Yarıda da KG Var Olasılığı", f"%{st.session_state['iki_yari_kg']}", f"{st.session_state['fark_kg']:+.1f}% (Genel Ortalamaya Göre Fark)")
+
+        with st.expander("📋 Detaylı İY/MS Olasılık Matrisini Gör"):
+            iy_ms_df = pd.DataFrame(list(iy_ms.items()), columns=['İY/MS Senaryosu', 'Gerçekleşme (%)']).sort_values(by='Gerçekleşme (%)', ascending=False).reset_index(drop=True)
+            st.dataframe(iy_ms_df, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("🔍 Benzer Maçlar Arşiv Filtresi ve İY/MS Arama")
+        
+        # Filtreleme Seçenekleri (Artık İY/MS kombinasyonlarını da destekliyor)
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1: 
+            ms_filtre = st.multiselect("Sonuç Filtrele", options=["MS 1", "MS 0", "MS 2"], default=["MS 1", "MS 0", "MS 2"])
+        with col_f2:
+            iyms_secenekler = list(iy_ms.keys())
+            iyms_filtre = st.multiselect("İY/MS Kombinasyon Filtrele", options=iyms_secenekler, default=iyms_secenekler)
+        with col_f3: 
+            goster_sayi = st.slider("Kayıt Sayısı", 5, 30, 10, 5)
+        
+        # Filtrelerin DataFrame'e uygulanması
+        ham_benzer = st.session_state['benzer_maclar']
+        filtreli_df = ham_benzer[ham_benzer['Sonuç'].isin(ms_filtre) & ham_benzer['İY/MS'].isin(iyms_filtre)]
         st.dataframe(filtreli_df.head(goster_sayi), use_container_width=True)
 
-    # --- TAB 2: BACKTEST ---
+    # --- TAB 2: ROI & KASA ---
     with tab2:
-        st.subheader("🧪 İY/MS Matrisi & Stratejik Senaryolar")
-        iy_ms_df = pd.DataFrame(list(iy_ms.items()), columns=['İY/MS Senaryosu', 'Gerçekleşme (%)']).sort_values(by='Gerçekleşme (%)', ascending=False).reset_index(drop=True)
-        st.dataframe(iy_ms_df, use_container_width=True)
-        
-        c_b1, c_b2 = st.columns(2)
-        c_b1.metric("İki Yarıda 1.5 Üst Olasılığı", f"%{st.session_state['iki_yari_15_ust']}")
-        c_b2.metric("İki Yarıda KG Var Olasılığı", f"%{st.session_state['iki_yari_kg']}")
-
-    # --- TAB 3: ROI & KASA ---
-    with tab3:
         st.subheader("💎 Value Bet & Beklenen Değer (EV) Hesaplayıcı")
         if en_degerli_ev > 0:
             st.success(f"🎯 **AVANTAJLI BAHİS (VALUE):** Büronun açığı **{en_degerli_isim}** tercihinde yakalandı! Beklenen Değer (EV): **+{en_degerli_ev}**")
@@ -390,8 +406,8 @@ if st.session_state.get('analiz_tamam', False):
             takip_dosyasi_kaydet(df_takip)
             st.toast("✅ Analiz kalıcı hafızaya kaydedildi!", icon="📌")
 
-    # --- TAB 4: TAHMİN TAKİBİ ---
-    with tab4:
+    # --- TAB 3: TAHMİN TAKİBİ ---
+    with tab3:
         st.subheader("📈 Tahmin Takibi & Gelişmiş Sonuç / İstatistik Paneli")
         df_takip = takip_dosyasi_yukle()
         
@@ -433,7 +449,7 @@ if st.session_state.get('analiz_tamam', False):
             st.dataframe(df_gosterge.style.map(highlight_status, subset=['Durum']), use_container_width=True)
             
             st.markdown("#### ⚽ Maç Sonucu, Skor ve Detaylı Saha İçi İstatistikleri Gir")
-            bekleyenler = df_takip[df_takip['Durum'] == 'Bekliyor']
+            bekleyenler = df_takip[df_takip['Durum'] == 'Beklizer' if 'Beklizer' in df_takip['Durum'].values else df_takip['Durum'] == 'Bekliyor']
             if len(bekleyenler) > 0:
                 c_s1, c_s2, c_s3 = st.columns([2, 1, 1])
                 secili_id = c_s1.selectbox("Sonuçlandırılacak Maçı Seç:", bekleyenler['ID'].tolist(), format_func=lambda x: f"ID {x}: {df_takip.loc[df_takip['ID']==x, 'Mac'].values[0]}")
