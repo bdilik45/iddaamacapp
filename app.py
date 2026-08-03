@@ -94,6 +94,12 @@ def motoru_baslat():
     df['res'] = df['FTR']  
     df['tot'] = df['FTHG'] + df['FTAG']  
     
+    # Global İstatistik Sütunları
+    df['HT_Total'] = df['HTHG'] + df['HTAG']
+    df['SH_Home'] = df['FTHG'] - df['HTHG']
+    df['SH_Away'] = df['FTAG'] - df['HTAG']
+    df['SH_Total'] = df['SH_Home'] + df['SH_Away']
+    
     df['Open_H'] = df['B365H']
     df['Open_D'] = df['B365D']
     df['Open_A'] = df['B365A']
@@ -140,21 +146,18 @@ def analiz_et(ph, pd_oran, pa, pover):
     hedef_maclar['KG'] = (hedef_maclar['FTHG'] > 0) & (hedef_maclar['FTAG'] > 0)
     kg_yuzdesi = min(round(hedef_maclar['KG'].mean() * 100, 1), 98.0)
     ust_yuzdesi = min(round((hedef_maclar['tot'] > 2.5).mean() * 100, 1), 98.0)
-    
-    hedef_maclar['HT_Total'] = hedef_maclar['HTHG'] + hedef_maclar['HTAG']
-    hedef_maclar['SH_Home'] = hedef_maclar['FTHG'] - hedef_maclar['HTHG']
-    hedef_maclar['SH_Away'] = hedef_maclar['FTAG'] - hedef_maclar['HTAG']
-    hedef_maclar['SH_Total'] = hedef_maclar['SH_Home'] + hedef_maclar['SH_Away']
 
-    iki_yari_15_ust_yuzdesi = round(hedef_maclar['HT_Total'].ge(2).mean() * hedef_maclar['SH_Total'].ge(2).mean() * 100 * 1.4, 1)
+    iki_yari_15_ust_yuzdesi = round(hedef_maclar['HT_Total'].ge(2).mean() * hedef_maclar['SH_Total'].ge(2).mean() * 100, 1)
     
     ht_kg_serisi = (hedef_maclar['HTHG'] > 0) & (hedef_maclar['HTAG'] > 0)
     sh_kg_serisi = (hedef_maclar['SH_Home'] > 0) & (hedef_maclar['SH_Away'] > 0)
-    iki_yari_kg_yuzdesi = round((ht_kg_serisi & sh_kg_serisi).mean() * 100 * 1.8, 1)
+    iki_yari_kg_yuzdesi = round((ht_kg_serisi & sh_kg_serisi).mean() * 100, 1)
     
-    # Fark (Delta) Hesaplamaları (Normal maça göre sapma)
-    genel_iki_yari_15_ortalama = round(df['HT_Total'].ge(2).mean() * df['SH_Total'].ge(2).mean() * 100 * 1.4, 1)
-    genel_iki_yari_kg_ortalama = round(((df['HTHG'] > 0) & (df['HTAG'] > 0) & ((df['FTHG'] - df['HTHG']) > 0) & ((df['FTAG'] - df['HTAG']) > 0)).mean() * 100 * 1.8, 1)
+    # Genel Arşiv Ortalamaları (Baseline Karşılaştırması)
+    genel_iki_yari_15_ortalama = round(df['HT_Total'].ge(2).mean() * df['SH_Total'].ge(2).mean() * 100, 1)
+    genel_ht_kg = (df['HTHG'] > 0) & (df['HTAG'] > 0)
+    genel_sh_kg = (df['SH_Home'] > 0) & (df['SH_Away'] > 0)
+    genel_iki_yari_kg_ortalama = round((genel_ht_kg & genel_sh_kg).mean() * 100, 1)
     
     fark_iki_yari_15 = round(iki_yari_15_ust_yuzdesi - genel_iki_yari_15_ortalama, 1)
     fark_iki_yari_kg = round(iki_yari_kg_yuzdesi - genel_iki_yari_kg_ortalama, 1)
@@ -281,7 +284,7 @@ if st.session_state.get('analiz_tamam', False):
     iy_ms = st.session_state['iy_ms']
     aktif_mac = st.session_state.get('secilen_mac_baslik', 'Özel Maç')
     
-    # Artık 3 ana sekme var (Backtest ana dashboard'a taşındı)
+    # 3 Ana Sekme Yapısı
     tab1, tab2, tab3 = st.tabs([
         "📊 Görsel Trading Dashboard", 
         "💰 ROI & Value Bet Analizi", 
@@ -319,7 +322,7 @@ if st.session_state.get('analiz_tamam', False):
         surpriz_isim = "MS 0"
         surpriz_oran = ms0_oran
 
-    # --- TAB 1: DASHBOARD (Geliştirilmiş & Tüm Senaryoları İçeren Ana Ekran) ---
+    # --- TAB 1: DASHBOARD ---
     with tab1:
         st.subheader("🎯 Olasılık Dağılımı ve Piyasa Analizi")
         
@@ -343,10 +346,9 @@ if st.session_state.get('analiz_tamam', False):
         st.markdown("---")
         st.subheader("🧪 İY/MS Matrisi & İki Yarı Özel Karşılaştırma Farkları")
         
-        # Fark (Delta) Metrikleri Gösterimi
         f_col1, f_col2 = st.columns(2)
-        f_col1.metric("İki Yarıda da 1.5 Üst Olasılığı", f"%{st.session_state['iki_yari_15_ust']}", f"{st.session_state['fark_15']:+.1f}% (Genel Ortalamaya Göre Fark)")
-        f_col2.metric("İki Yarıda da KG Var Olasılığı", f"%{st.session_state['iki_yari_kg']}", f"{st.session_state['fark_kg']:+.1f}% (Genel Ortalamaya Göre Fark)")
+        f_col1.metric("İki Yarıda da 1.5 Üst Olasılığı", f"%{st.session_state['iki_yari_15_ust']}", f"{st.session_state['fark_15']:+.1f}% (Genel Ortalamaya Göre)")
+        f_col2.metric("İki Yarıda da KG Var Olasılığı", f"%{st.session_state['iki_yari_kg']}", f"{st.session_state['fark_kg']:+.1f}% (Genel Ortalamaya Göre)")
 
         with st.expander("📋 Detaylı İY/MS Olasılık Matrisini Gör"):
             iy_ms_df = pd.DataFrame(list(iy_ms.items()), columns=['İY/MS Senaryosu', 'Gerçekleşme (%)']).sort_values(by='Gerçekleşme (%)', ascending=False).reset_index(drop=True)
@@ -355,7 +357,6 @@ if st.session_state.get('analiz_tamam', False):
         st.markdown("---")
         st.subheader("🔍 Benzer Maçlar Arşiv Filtresi ve İY/MS Arama")
         
-        # Filtreleme Seçenekleri (Artık İY/MS kombinasyonlarını da destekliyor)
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1: 
             ms_filtre = st.multiselect("Sonuç Filtrele", options=["MS 1", "MS 0", "MS 2"], default=["MS 1", "MS 0", "MS 2"])
@@ -365,7 +366,6 @@ if st.session_state.get('analiz_tamam', False):
         with col_f3: 
             goster_sayi = st.slider("Kayıt Sayısı", 5, 30, 10, 5)
         
-        # Filtrelerin DataFrame'e uygulanması
         ham_benzer = st.session_state['benzer_maclar']
         filtreli_df = ham_benzer[ham_benzer['Sonuç'].isin(ms_filtre) & ham_benzer['İY/MS'].isin(iyms_filtre)]
         st.dataframe(filtreli_df.head(goster_sayi), use_container_width=True)
@@ -449,7 +449,7 @@ if st.session_state.get('analiz_tamam', False):
             st.dataframe(df_gosterge.style.map(highlight_status, subset=['Durum']), use_container_width=True)
             
             st.markdown("#### ⚽ Maç Sonucu, Skor ve Detaylı Saha İçi İstatistikleri Gir")
-            bekleyenler = df_takip[df_takip['Durum'] == 'Beklizer' if 'Beklizer' in df_takip['Durum'].values else df_takip['Durum'] == 'Bekliyor']
+            bekleyenler = df_takip[df_takip['Durum'] == 'Bekliyor']
             if len(bekleyenler) > 0:
                 c_s1, c_s2, c_s3 = st.columns([2, 1, 1])
                 secili_id = c_s1.selectbox("Sonuçlandırılacak Maçı Seç:", bekleyenler['ID'].tolist(), format_func=lambda x: f"ID {x}: {df_takip.loc[df_takip['ID']==x, 'Mac'].values[0]}")
