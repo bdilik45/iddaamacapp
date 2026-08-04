@@ -268,19 +268,17 @@ def bulteni_kazi():
                     ms2 = float(ms2_tag.text.strip().replace(',', '.')) if ms2_tag and ms2_tag.text.strip() != '-' else 1.01
                     ust = float(ust_tag.text.strip().replace(',', '.')) if ust_tag and ust_tag.text.strip() != '-' else 1.01
                     
+                    # YENİ KG VAR TESPİT ALGORİTMASI (Hata Düzeltildi)
                     kg = 1.55 
-                    kg_tag = row.find('a', class_=lambda x: x and ('KG' in x.upper() or 'GOL' in x.upper()))
+                    kg_tag = row.find('a', class_=lambda x: x and x in ['KGV', 'KGVAR', 'Var'])
                     if kg_tag and kg_tag.text.strip() != '-':
                         try: kg = float(kg_tag.text.strip().replace(',', '.'))
                         except: pass
                     else:
-                        tds = row.find_all('td')
-                        for td in tds:
-                            try:
-                                val = float(td.text.strip().replace(',', '.'))
-                                if 1.20 <= val <= 3.00 and val != ms1 and val != ust:
-                                    kg = val; break
-                            except: continue
+                        # Ana sayfada kolon yoksa rastgele oran alma, üst oranına göre tahmini bir rakam koy. 
+                        # Kullanıcı sol panelden gerçeğiyle manuel değiştirebilir!
+                        if ust > 1.01:
+                            kg = round(ust * 0.95, 2) if ust < 1.70 else 1.65
 
                     if ms1 == 1.01 and ms0 == 1.01: continue
                     takim_adi = "Bilinmeyen Maç"
@@ -295,7 +293,6 @@ def bulteni_kazi():
     except:
         st.sidebar.warning("⚠️ Canlı bülten alınamadı. Standart mod aktif.")
     return cekilen_maclar
-
 # --- KULLANICI ARAYÜZÜ (UI) ---
 st.title("⚽ MacApp Pro | AI Trading & Risk Terminal")
 
