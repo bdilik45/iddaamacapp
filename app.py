@@ -340,11 +340,12 @@ if st.session_state.get('analiz_tamam', False):
     iy_ms = st.session_state['iy_ms']
     aktif_mac = st.session_state.get('secilen_mac_baslik', 'Özel Maç')
     
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Görsel Trading Dashboard", 
         "🎯 Nokta Atışı Özel Oran Tarayıcı",
         "💰 ROI & Value Bet Analizi", 
-        "📈 Tahmin Takibi & Öğrenen Karne"
+        "📈 Tahmin Takibi & Öğrenen Karne",
+        "🤖 Otomatik Bülten Radarı"
     ])
     
     ev_dict = {
@@ -643,3 +644,75 @@ if st.session_state.get('analiz_tamam', False):
                     st.rerun()
             else:
                 st.info("🎉 Bekleyen maçınız bulunmuyor.")
+# --- TAB 5: OTOMATİK BÜLTEN TARAYICI (RADAR) ---
+    with tab5:
+        st.subheader("🤖 Tüm Bülteni Yapay Zeka ile Tara (Fırsat Radarı)")
+        st.markdown("Bültendeki oynanmamış tüm maçları tek tuşla tarayıp; KG Var, 2.5 Üst ve İlk Yarı Gol olasılıklarına göre analiz eder. **Sıralamak için sütun başlıklarına tıklaman yeterlidir.**")
+
+        if st.button("🚀 Tüm Bülteni Analiz Et (Bülten boyutuna göre 10-30 sn sürebilir)", use_container_width=True):
+            bulten_sonuclari = []
+            ilerleme_cubugu = st.progress(0)
+            durum_metni = st.empty()
+            
+            toplam_mac = len(guncel_bulten) - 1 # Manuel girişi çıkar
+            islenen = 0
+            
+            # Sözlükteki tüm maçları döngüye sokuyoruz
+            for mac_adi, oranlar in guncel_bulten.items():
+                if mac_adi == "Manuel Giriş (Özel Maç Tanımla)":
+                    continue
+                    
+                islenen += 1
+                durum_metni.info(f"Analiz ediliyor: {mac_adi} ({islenen} / {toplam_mac})")
+                ilerleme_cubugu.progress(islenen / toplam_mac)
+                
+                try:
+                    # Gerçek marj ve oran hesaplamaları
+                    t_marj = (1 / oranlar['ms1']) + (1 / oranlar['ms0']) + (1 / oranlar['ms2'])
+                    ph = (1 / oranlar['ms1']) / t_marj
+                    pd = (1 / oranlar['ms0']) / t_marj
+                    pa = (1 / oranlar['ms2']) / t_marj
+                    pover = (1 / oranlar['ust']) / 1.06
+                    
+                    # Ana analiz motorunu sessizce çalıştır
+                    _, kg_yuzdesi, ust_yuzdesi, tablo_df, _, _, _, _, _, _ = analiz_et(ph, pd, pa, pover)
+                    
+                    # İlk Yarı Olasılıklarını hedef maçların skorlarından türet
+                    iy_goller = tablo_df['İlk Yarı Skoru'].apply(lambda x: sum(map(int, x.split(' - '))))
+                    iy_05_yuzde = round((iy_goller > 0).mean() * 100, 1)
+                    iy_15_yuzde = round((iy_goller > 1).mean() * 100, 1)
+                    
+                    bulten_sonuclari.append({
+                        "Maç": mac_adi,
+                        "MS 1": oranlar['ms1'],
+                        "MS X": oranlar['ms0'],
+                        "MS 2": oranlar['ms2'],
+                        "KG VAR (%)": float(kg_yuzdesi),
+                        "2.5 ÜST (%)": float(ust_yuzdesi),
+                        "İY 0.5 ÜST (%)": float(iy_05_yuzde),
+                        "İY 1.5 ÜST (%)": float(iy_15_yuzde)
+                    })
+                except Exception as e:
+                    # Hata veren (arşivde benzeri bulunmayan) sıradışı maçları atla
+                    continue
+                    
+            if bulten_sonuclari:
+                df_bulten = pd.DataFrame(bulten_sonuclari)
+                ilerleme_cubugu.empty()
+                durum_metni.success("✅ Tüm bülten analizi tamamlandı! Hedef olasılıkların sütun başlıklarına (Örn: KG VAR) tıklayarak en yüksekten düşüğe doğru sıralayabilirsin.")
+                
+                # Pandas Styler ile ısı haritası (renklendirme) ekleyerek görselleştir
+                st.dataframe(
+                    df_bulten.style.background_gradient(
+                        cmap='Greens', 
+                        subset=['KG VAR (%)', '2.5 ÜST (%)', 'İY 0.5 ÜST (%)', 'İY 1.5 ÜST (%)']
+                    )
+                    .format("{:.2f}", subset=['MS 1', 'MS X', 'MS 2'])
+                    .format("{:.1f}%", subset=['KG VAR (%)', '2.5 ÜST (%)', 'İY 0.5 ÜST (%)', 'İY 1.5 ÜST (%)']),
+                    use_container_width=True,
+                    height=800
+                )
+            else:
+                ilerleme_cubugu.empty()
+                durum_metni.error("Analiz edilecek maç bulunamadı veya bir hata oluştu.")
+
