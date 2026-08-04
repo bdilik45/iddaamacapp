@@ -127,22 +127,36 @@ def motoru_baslat():
     df['SH_Away'] = df['FTAG'] - df['HTAG']
     df['SH_Total'] = df['SH_Home'] + df['SH_Away']
     
-    df['Open_H'] = df['B365H']
-    df['Open_D'] = df['B365D']
-    df['Open_A'] = df['B365A']
-    df['Open_O25'] = df['B365>2.5']
+    # 1. AKILLI ORAN KURTARICI: Sütunlar eksikse alternatif büroları devreye sok
+    def sutun_sec(liste):
+        for col in liste:
+            if col in df.columns: return df[col]
+        return pd.Series([np.nan]*len(df))
+
+    df['Open_H'] = sutun_sec(['B365H', 'PSH', 'MaxH', 'AvgH'])
+    df['Open_D'] = sutun_sec(['B365D', 'PSD', 'MaxD', 'AvgD'])
+    df['Open_A'] = sutun_sec(['B365A', 'PSA', 'MaxA', 'AvgA'])
+    df['Open_O25'] = sutun_sec(['B365>2.5', 'B365_O25', 'P>2.5', 'Max>2.5'])
+    df['Open_U25'] = sutun_sec(['B365<2.5', 'B365_U25', 'P<2.5', 'Max<2.5'])
     
-    df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'Open_H', 'Open_D'])
+    # 2. Daha Güvenli Tekilleştirme (Oranlara göre değil, takımlara ve tarihe göre)
+    if 'Date' in df.columns:
+        df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'Date'])
+    else:
+        df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG'])
     
     margin = (1 / df['Open_H']) + (1 / df['Open_D']) + (1 / df['Open_A'])
     df['pH'] = (1 / df['Open_H']) / margin
     df['pD'] = (1 / df['Open_D']) / margin
     df['pA'] = (1 / df['Open_A']) / margin
     
-    margin_ou = (1 / df['B365>2.5']) + (1 / df['B365<2.5'])
-    df['pOver'] = (1 / df['B365>2.5']) / margin_ou
+    # Alt oranı sistemde varsa gerçek marjı, yoksa %6 standart marjı kullan
+    df['pOver'] = np.where(df['Open_U25'].notna(), 
+                           (1 / df['Open_O25']) / ((1 / df['Open_O25']) + (1 / df['Open_U25'])), 
+                           (1 / df['Open_O25']) / 1.06)
     
-    df = df.dropna(subset=['pH', 'pD', 'pA', 'pOver', 'FTHG', 'FTAG', 'HTHG', 'HTAG', 'Open_H', 'Open_D', 'Open_A', 'Open_O25', 'res'])
+    # 3. GADDAR SİLME İŞLEMİ YUMUŞATILDI: Yalnızca algoritma için hayati olanları filtrele
+    df = df.dropna(subset=['pH', 'pD', 'pA', 'pOver', 'FTHG', 'FTAG'])
     
     features = ['pH', 'pD', 'pA', 'pOver']
     X = df[features].values
@@ -150,12 +164,6 @@ def motoru_baslat():
     knn = NearestNeighbors(n_neighbors=50, metric='euclidean')
     knn.fit(X)
     return df, knn, features
-
-try:
-    df, knn, features = motoru_baslat()
-except Exception as e:
-    st.error(f"Veri seti yüklenirken hata oluştu. Detay: {e}")
-    st.stop()
 
 def analiz_et(ph, pd_oran, pa, pover):
     sorgu = np.array([[ph, pd_oran, pa, pover]])
