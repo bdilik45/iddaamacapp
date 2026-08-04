@@ -9,36 +9,6 @@ import json
 import warnings
 warnings.filterwarnings('ignore')
 
-# --- BÜRO VE SÜTUN TESPİT HARİTASI ---
-BURO_MAP = {
-    "Bet365": {
-        "MS 1": ["B365H", "B365_H", "Bet365_1"],
-        "MS X": ["B365D", "B365_D", "Bet365_X"],
-        "MS 2": ["B365A", "B365_A", "Bet365_2"],
-        "2.5 Üst": ["B365>2.5", "B365_O25", "B365_Over25"],
-        "2.5 Alt": ["B365<2.5", "B365_U25", "B365_Under25"],
-        "1.5 Üst": ["B365>1.5", "B365_O15"],
-        "KG Var": ["B365_BTS_Y", "B365_BTTS_Yes", "B365_KG_Var", "B365_KG"],
-        "İY 1": ["B365_1H_1", "B365HTH", "HT_B365H", "B365_HT1"]
-    },
-    "Pinnacle": {
-        "MS 1": ["PSH", "PinnacleH", "PS_H", "MaxH"],
-        "MS X": ["PSD", "PinnacleD", "PS_D", "MaxD"],
-        "MS 2": ["PSA", "PinnacleA", "PS_A", "MaxA"],
-        "2.5 Üst": ["P>2.5", "PS>2.5", "Pinnacle>2.5", "Max>2.5"],
-        "2.5 Alt": ["P<2.5", "PS<2.5", "Pinnacle<2.5", "Max<2.5"],
-        "1.5 Üst": ["P>1.5", "PS>1.5", "Max>1.5"],
-        "KG Var": ["PS_BTS_Y", "PS_BTTS_Yes", "Pinnacle_KG_Var", "PS_KG"],
-        "İY 1": ["PS_1H_1", "PSHTH", "HT_PSH", "PS_HT1"]
-    }
-}
-
-def sutun_getir(df, olasi_sutunlar):
-    for col in olasi_sutunlar:
-        if col in df.columns:
-            return col
-    return None
-
 # --- SAYFA VE TEMA AYARLARI ---
 st.set_page_config(page_title="MacApp Pro | Trading Terminal", page_icon="⚽", layout="wide")
 
@@ -112,6 +82,36 @@ def oran_duzelt(deger):
         return round(val, 2)
     except: return deger
 
+# --- BÜRO VE SÜTUN TESPİT HARİTASI ---
+BURO_MAP = {
+    "Bet365": {
+        "MS 1": ["B365H", "B365_H", "Bet365_1"],
+        "MS X": ["B365D", "B365_D", "Bet365_X"],
+        "MS 2": ["B365A", "B365_A", "Bet365_2"],
+        "2.5 Üst": ["B365>2.5", "B365_O25", "B365_Over25"],
+        "2.5 Alt": ["B365<2.5", "B365_U25", "B365_Under25"],
+        "1.5 Üst": ["B365>1.5", "B365_O15"],
+        "KG Var": ["B365_BTS_Y", "B365_BTTS_Yes", "B365_KG_Var", "B365_KG"],
+        "İY 1": ["B365_1H_1", "B365HTH", "HT_B365H", "B365_HT1"]
+    },
+    "Pinnacle": {
+        "MS 1": ["PSH", "PinnacleH", "PS_H", "MaxH"],
+        "MS X": ["PSD", "PinnacleD", "PS_D", "MaxD"],
+        "MS 2": ["PSA", "PinnacleA", "PS_A", "MaxA"],
+        "2.5 Üst": ["P>2.5", "PS>2.5", "Pinnacle>2.5", "Max>2.5"],
+        "2.5 Alt": ["P<2.5", "PS<2.5", "Pinnacle<2.5", "Max<2.5"],
+        "1.5 Üst": ["P>1.5", "PS>1.5", "Max>1.5"],
+        "KG Var": ["PS_BTS_Y", "PS_BTTS_Yes", "Pinnacle_KG_Var", "PS_KG"],
+        "İY 1": ["PS_1H_1", "PSHTH", "HT_PSH", "PS_HT1"]
+    }
+}
+
+def sutun_getir(df, olasi_sutunlar):
+    for col in olasi_sutunlar:
+        if col in df.columns:
+            return col
+    return None
+
 # --- YAPAY ZEKA VE KNN MOTORU ---
 @st.cache_resource
 def motoru_baslat():
@@ -139,7 +139,7 @@ def motoru_baslat():
     df['Open_O25'] = sutun_sec(['B365>2.5', 'B365_O25', 'P>2.5', 'Max>2.5'])
     df['Open_U25'] = sutun_sec(['B365<2.5', 'B365_U25', 'P<2.5', 'Max<2.5'])
     
-    # 2. Daha Güvenli Tekilleştirme (Oranlara göre değil, takımlara ve tarihe göre)
+    # 2. Daha Güvenli Tekilleştirme
     if 'Date' in df.columns:
         df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'Date'])
     else:
@@ -155,7 +155,7 @@ def motoru_baslat():
                            (1 / df['Open_O25']) / ((1 / df['Open_O25']) + (1 / df['Open_U25'])), 
                            (1 / df['Open_O25']) / 1.06)
     
-    # 3. GADDAR SİLME İŞLEMİ YUMUŞATILDI: Yalnızca algoritma için hayati olanları filtrele
+    # 3. Yalnızca algoritma için hayati olanları filtrele
     df = df.dropna(subset=['pH', 'pD', 'pA', 'pOver', 'FTHG', 'FTAG'])
     
     features = ['pH', 'pD', 'pA', 'pOver']
@@ -164,10 +164,11 @@ def motoru_baslat():
     knn = NearestNeighbors(n_neighbors=50, metric='euclidean')
     knn.fit(X)
     return df, knn, features
-    try:
+
+try:
     df, knn, features = motoru_baslat()
 except Exception as e:
-    st.error(f"Veri seti yüklenirken hata oluştu. Detay: {e}")
+    st.error(f"Veri seti yüklenirken hata oluştu. Lütfen dosya yolunu ve veritabanını kontrol edin. Detay: {e}")
     st.stop()
 
 def analiz_et(ph, pd_oran, pa, pover):
@@ -263,7 +264,6 @@ def bulteni_kazi():
                     ms2 = float(ms2_tag.text.strip().replace(',', '.')) if ms2_tag and ms2_tag.text.strip() != '-' else 1.01
                     ust = float(ust_tag.text.strip().replace(',', '.')) if ust_tag and ust_tag.text.strip() != '-' else 1.01
                     
-                    # GELİŞTİRİLMİŞ KG YAKALAYICI
                     kg = 1.55 
                     kg_tag = row.find('a', class_=lambda x: x and ('KG' in x.upper() or 'GOL' in x.upper()))
                     if kg_tag and kg_tag.text.strip() != '-':
@@ -339,7 +339,6 @@ if st.session_state.get('analiz_tamam', False):
     iy_ms = st.session_state['iy_ms']
     aktif_mac = st.session_state.get('secilen_mac_baslik', 'Özel Maç')
     
-    # YENİ 4 SEKME (Nokta Atışı Filtresi Eklendi)
     tab1, tab2, tab3, tab4 = st.tabs([
         "📊 Görsel Trading Dashboard", 
         "🎯 Nokta Atışı Özel Oran Tarayıcı",
