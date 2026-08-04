@@ -82,26 +82,26 @@ def oran_duzelt(deger):
         return round(val, 2)
     except: return deger
 
-# --- BÜRO VE SÜTUN TESPİT HARİTASI ---
+# --- BÜRO VE SÜTUN TESPİT HARİTASI (GENİŞLETİLDİ) ---
 BURO_MAP = {
     "Bet365": {
-        "MS 1": ["B365H", "B365_H", "Bet365_1"],
-        "MS X": ["B365D", "B365_D", "Bet365_X"],
-        "MS 2": ["B365A", "B365_A", "Bet365_2"],
-        "2.5 Üst": ["B365>2.5", "B365_O25", "B365_Over25"],
-        "2.5 Alt": ["B365<2.5", "B365_U25", "B365_Under25"],
-        "1.5 Üst": ["B365>1.5", "B365_O15"],
-        "KG Var": ["B365_BTS_Y", "B365_BTTS_Yes", "B365_KG_Var", "B365_KG"],
-        "İY 1": ["B365_1H_1", "B365HTH", "HT_B365H", "B365_HT1"]
+        "MS 1": ["B365H", "B365_H", "Bet365_1", "B365CH"],
+        "MS X": ["B365D", "B365_D", "Bet365_X", "B365CD"],
+        "MS 2": ["B365A", "B365_A", "Bet365_2", "B365CA"],
+        "2.5 Üst": ["B365>2.5", "B365_O25", "B365_Over25", "O2.5", "B365C>2.5"],
+        "2.5 Alt": ["B365<2.5", "B365_U25", "B365_Under25", "U2.5", "B365C<2.5"],
+        "1.5 Üst": ["B365>1.5", "B365_O15", "O1.5", "B365_O1.5"],
+        "KG Var": ["B365_BTS_Y", "B365_BTTS_Yes", "B365_KG_Var", "B365_KG", "BTTS", "B365BTTS", "KG_Var", "B365_BTTS"],
+        "İY 1": ["B365_1H_1", "B365HTH", "HT_B365H", "B365_HT1", "HT1", "B365_HT_1"]
     },
     "Pinnacle": {
-        "MS 1": ["PSH", "PinnacleH", "PS_H", "MaxH"],
-        "MS X": ["PSD", "PinnacleD", "PS_D", "MaxD"],
-        "MS 2": ["PSA", "PinnacleA", "PS_A", "MaxA"],
-        "2.5 Üst": ["P>2.5", "PS>2.5", "Pinnacle>2.5", "Max>2.5"],
-        "2.5 Alt": ["P<2.5", "PS<2.5", "Pinnacle<2.5", "Max<2.5"],
-        "1.5 Üst": ["P>1.5", "PS>1.5", "Max>1.5"],
-        "KG Var": ["PS_BTS_Y", "PS_BTTS_Yes", "Pinnacle_KG_Var", "PS_KG"],
+        "MS 1": ["PSH", "PinnacleH", "PS_H", "MaxH", "PSCH"],
+        "MS X": ["PSD", "PinnacleD", "PS_D", "MaxD", "PSCD"],
+        "MS 2": ["PSA", "PinnacleA", "PS_A", "MaxA", "PSCA"],
+        "2.5 Üst": ["P>2.5", "PS>2.5", "Pinnacle>2.5", "Max>2.5", "Avg>2.5"],
+        "2.5 Alt": ["P<2.5", "PS<2.5", "Pinnacle<2.5", "Max<2.5", "Avg<2.5"],
+        "1.5 Üst": ["P>1.5", "PS>1.5", "Max>1.5", "Avg>1.5"],
+        "KG Var": ["PS_BTS_Y", "PS_BTTS_Yes", "Pinnacle_KG_Var", "PS_KG", "Max_BTTS"],
         "İY 1": ["PS_1H_1", "PSHTH", "HT_PSH", "PS_HT1"]
     }
 }
@@ -127,36 +127,42 @@ def motoru_baslat():
     df['SH_Away'] = df['FTAG'] - df['HTAG']
     df['SH_Total'] = df['SH_Home'] + df['SH_Away']
     
-    # 1. AKILLI ORAN KURTARICI: Sütunlar eksikse alternatif büroları devreye sok
-    def sutun_sec(liste):
-        for col in liste:
-            if col in df.columns: return df[col]
-        return pd.Series([np.nan]*len(df))
+    # 1. AKILLI ORAN KURTARICI (BÜTÜN SATIRLARI KORUYAN YENİ YAPI)
+    def sutun_birlestir(veri, sutun_listesi):
+        mevcut = [c for c in sutun_listesi if c in veri.columns]
+        if not mevcut: return pd.Series([np.nan]*len(veri), index=veri.index)
+        s = veri[mevcut[0]].copy()
+        for c in mevcut[1:]:
+            s = s.combine_first(veri[c])
+        return s
 
-    df['Open_H'] = sutun_sec(['B365H', 'PSH', 'MaxH', 'AvgH'])
-    df['Open_D'] = sutun_sec(['B365D', 'PSD', 'MaxD', 'AvgD'])
-    df['Open_A'] = sutun_sec(['B365A', 'PSA', 'MaxA', 'AvgA'])
-    df['Open_O25'] = sutun_sec(['B365>2.5', 'B365_O25', 'P>2.5', 'Max>2.5'])
-    df['Open_U25'] = sutun_sec(['B365<2.5', 'B365_U25', 'P<2.5', 'Max<2.5'])
+    df['Open_H'] = sutun_birlestir(df, ['B365H', 'PSH', 'MaxH', 'AvgH', 'IWH', 'VCH', 'WHH'])
+    df['Open_D'] = sutun_birlestir(df, ['B365D', 'PSD', 'MaxD', 'AvgD', 'IWD', 'VCD', 'WHD'])
+    df['Open_A'] = sutun_birlestir(df, ['B365A', 'PSA', 'MaxA', 'AvgA', 'IWA', 'VCA', 'WHA'])
+    df['Open_O25'] = sutun_birlestir(df, ['B365>2.5', 'B365_O25', 'P>2.5', 'Max>2.5', 'Avg>2.5', 'BbMx>2.5'])
+    df['Open_U25'] = sutun_birlestir(df, ['B365<2.5', 'B365_U25', 'P<2.5', 'Max<2.5', 'Avg<2.5', 'BbMx<2.5'])
     
-    # 2. Daha Güvenli Tekilleştirme
+    # 2. Tekilleştirme Sadece Aynı Takım ve Tarih ise Çalışsın
     if 'Date' in df.columns:
         df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'Date'])
     else:
         df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG'])
+    
+    # Hayati gol verisi eksikse sil
+    df = df.dropna(subset=['FTHG', 'FTAG'])
     
     margin = (1 / df['Open_H']) + (1 / df['Open_D']) + (1 / df['Open_A'])
     df['pH'] = (1 / df['Open_H']) / margin
     df['pD'] = (1 / df['Open_D']) / margin
     df['pA'] = (1 / df['Open_A']) / margin
     
-    # Alt oranı sistemde varsa gerçek marjı, yoksa %6 standart marjı kullan
     df['pOver'] = np.where(df['Open_U25'].notna(), 
                            (1 / df['Open_O25']) / ((1 / df['Open_O25']) + (1 / df['Open_U25'])), 
                            (1 / df['Open_O25']) / 1.06)
-    
-    # 3. Yalnızca algoritma için hayati olanları filtrele
-    df = df.dropna(subset=['pH', 'pD', 'pA', 'pOver', 'FTHG', 'FTAG'])
+                           
+    # EKSİK ORANLARI MEDYAN İLE DOLDUR Kİ YÜZ BİNLERCE MAÇ ÇÖPE GİTMESİN
+    for col in ['pH', 'pD', 'pA', 'pOver']:
+        df[col] = df[col].fillna(df[col].median())
     
     features = ['pH', 'pD', 'pA', 'pOver']
     X = df[features].values
@@ -168,7 +174,7 @@ def motoru_baslat():
 try:
     df, knn, features = motoru_baslat()
 except Exception as e:
-    st.error(f"Veri seti yüklenirken hata oluştu. Lütfen dosya yolunu ve veritabanını kontrol edin. Detay: {e}")
+    st.error(f"Veri seti yüklenirken hata oluştu. Detay: {e}")
     st.stop()
 
 def analiz_et(ph, pd_oran, pa, pover):
@@ -422,21 +428,26 @@ if st.session_state.get('analiz_tamam', False):
         filtreli_df = ham_benzer[ham_benzer['Sonuç'].isin(ms_filtre) & ham_benzer['İY/MS'].isin(iyms_filtre)]
         st.dataframe(filtreli_df.head(goster_sayi), use_container_width=True)
 
-    # --- TAB 2: NOKTA ATIŞI ÖZEL ORAN TARAYICI (Gelişmiş Çoklu Market & Büro Filtresi) ---
+    # --- TAB 2: NOKTA ATIŞI ÖZEL ORAN TARAYICI ---
     with tab2:
         st.subheader("🎯 Çoklu Büro ve Genişletilmiş Market Oran Tarayıcı")
+        
+        # --- EKLENEN YENİ SİHİRLİ BUTON (SÜTUN KEŞFEDİCİ) ---
+        with st.expander("🛠️ Veritabanımdaki Orijinal Sütunları Gör (Eğer sütun bulunamadı hatası alıyorsan buraya tıkla)"):
+            st.write("Aşağıdaki liste senin .parquet dosyanın içinde yer alan *gerçek* sütun isimleridir. Eğer 'KG Var' veya '1.5 Üst' eksik uyarısı alırsan, o verinin bu listede hangi isimle (Örn: BTTS, U15 vs.) kaydedildiğini bulup koddaki BURO_MAP kısmına ekleyebilirsin.")
+            st.write(df.columns.tolist())
+            
         st.markdown("Arşivdeki **Bet365** veya **Pinnacle** sağlayıcılarının oranlarını seçip, **8 farklı bahis marketi** üzerinden birebir veya toleranslı eşleşme araması yapabilirsin.")
 
         c_buro, c_tol = st.columns([1, 1])
         with c_buro:
             secili_buro = st.radio("🏢 Sağlayıcı (Büro) Seçimi:", ["Bet365", "Pinnacle"], horizontal=True)
         with c_tol:
-            tolerans = st.slider("🎯 Hassasiyet Toleransı (±)", min_value=0.0, max_value=0.20, value=0.05, step=0.01, help="Örn: 2.10 oran için ±0.05 tolerans, 2.05 ile 2.15 arasındaki tüm maçları getirir.")
+            tolerans = st.slider("🎯 Hassasiyet Toleransı (±)", min_value=0.0, max_value=0.20, value=0.05, step=0.01)
 
         st.markdown("---")
         st.markdown(f"### 📊 {secili_buro} Oran Kriterleri & Market Seçimi")
         
-        # Müşterek Oran Değerleri
         ornek_oranlar = {
             "MS 1": float(ms1_oran),
             "MS X": float(ms0_oran),
@@ -448,7 +459,6 @@ if st.session_state.get('analiz_tamam', False):
             "İY 1": 2.75
         }
 
-        # Market Seçim Kutuları (8 Farklı Market)
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         col_m5, col_m6, col_m7, col_m8 = st.columns(4)
 
@@ -457,13 +467,11 @@ if st.session_state.get('analiz_tamam', False):
         secimler["MS X"] = col_m2.checkbox(f"MS X ({ornek_oranlar['MS X']:.2f})", value=False)
         secimler["MS 2"] = col_m3.checkbox(f"MS 2 ({ornek_oranlar['MS 2']:.2f})", value=False)
         secimler["2.5 Üst"] = col_m4.checkbox(f"2.5 Üst ({ornek_oranlar['2.5 Üst']:.2f})", value=True)
-
         secimler["2.5 Alt"] = col_m5.checkbox("2.5 Alt", value=False)
         secimler["1.5 Üst"] = col_m6.checkbox("1.5 Üst", value=False)
         secimler["KG Var"] = col_m7.checkbox(f"KG Var ({ornek_oranlar['KG Var']:.2f})", value=False)
         secimler["İY 1"] = col_m8.checkbox("İY 1 (İlk Yarı)", value=False)
 
-        # Aktif Edilen Kriterleri Toplama ve Veri Seti Sütunlarıyla Eşleştirme
         aktif_kriterler = {}
         for market, aktif in secimler.items():
             if aktif:
@@ -494,7 +502,6 @@ if st.session_state.get('analiz_tamam', False):
                     else:
                         st.success(f"✅ Toplam **{len(bulunan_maclar)}** eşleşen maç bulundu! ({secili_buro} Oranlarıyla)")
 
-                        # İstatistik Hesaplamaları
                         b_ms1 = len(bulunan_maclar[bulunan_maclar['res'] == 'H'])
                         b_ms0 = len(bulunan_maclar[bulunan_maclar['res'] == 'D'])
                         b_ms2 = len(bulunan_maclar[bulunan_maclar['res'] == 'A'])
@@ -508,7 +515,6 @@ if st.session_state.get('analiz_tamam', False):
                         b_iy15 = len(bulunan_maclar[(bulunan_maclar['HTHG'] + bulunan_maclar['HTAG']) > 1])
                         b_ust35 = len(bulunan_maclar[bulunan_maclar['tot'] > 3.5])
 
-                        # Metrik Gösterimleri
                         st.markdown("#### 🏆 Maç Sonu & Gol Dağılım Oranları")
                         m1, m2, m3, m4, m5, m6 = st.columns(6)
                         m1.metric("MS 1", f"%{round((b_ms1/len(bulunan_maclar))*100,1)}")
