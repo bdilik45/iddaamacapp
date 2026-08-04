@@ -142,11 +142,9 @@ def motoru_baslat():
     df['Open_O25'] = sutun_birlestir(df, ['B365>2.5', 'B365_O25', 'P>2.5', 'Max>2.5', 'Avg>2.5', 'BbMx>2.5'])
     df['Open_U25'] = sutun_birlestir(df, ['B365<2.5', 'B365_U25', 'P<2.5', 'Max<2.5', 'Avg<2.5', 'BbMx<2.5'])
     
-    # 2. Tekilleştirme Sadece Aynı Takım ve Tarih ise Çalışsın
-    if 'Date' in df.columns:
-        df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'Date'])
-    else:
-        df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG'])
+   # 2. GADDAR TEKİLLEŞTİRME (KİRLİ TARİH VERİSİNİ YOK SAYAR)
+    # Eğer takımlar, maç sonu skoru ve açılış oranları (MS1, X, 2) tamamen aynıysa bu kesinlikle mükerrer kayıttır (tarih yanlış yazılmış olsa bile).
+    df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'Open_H', 'Open_D', 'Open_A'])
     
     # Hayati gol verisi eksikse sil
     df = df.dropna(subset=['FTHG', 'FTAG'])
