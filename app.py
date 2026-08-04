@@ -164,6 +164,11 @@ def motoru_baslat():
     knn = NearestNeighbors(n_neighbors=50, metric='euclidean')
     knn.fit(X)
     return df, knn, features
+    try:
+    df, knn, features = motoru_baslat()
+except Exception as e:
+    st.error(f"Veri seti yüklenirken hata oluştu. Detay: {e}")
+    st.stop()
 
 def analiz_et(ph, pd_oran, pa, pover):
     sorgu = np.array([[ph, pd_oran, pa, pover]])
