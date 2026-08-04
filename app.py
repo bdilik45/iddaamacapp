@@ -78,11 +78,9 @@ def takip_dosyasi_kaydet(df_takip):
 def oran_duzelt(deger):
     try:
         val = float(deger)
-        if val > 10:
-            return round(val / 100.0, 2)
+        if val > 10: return round(val / 100.0, 2)
         return round(val, 2)
-    except:
-        return deger
+    except: return deger
 
 # --- YAPAY ZEKA VE KNN MOTORU ---
 @st.cache_resource
@@ -94,7 +92,6 @@ def motoru_baslat():
     df['res'] = df['FTR']  
     df['tot'] = df['FTHG'] + df['FTAG']  
     
-    # Global İstatistik Sütunları
     df['HT_Total'] = df['HTHG'] + df['HTAG']
     df['SH_Home'] = df['FTHG'] - df['HTHG']
     df['SH_Away'] = df['FTAG'] - df['HTAG']
@@ -153,7 +150,6 @@ def analiz_et(ph, pd_oran, pa, pover):
     sh_kg_serisi = (hedef_maclar['SH_Home'] > 0) & (hedef_maclar['SH_Away'] > 0)
     iki_yari_kg_yuzdesi = round((ht_kg_serisi & sh_kg_serisi).mean() * 100, 1)
     
-    # Genel Arşiv Ortalamaları (Baseline Karşılaştırması)
     genel_iki_yari_15_ortalama = round(df['HT_Total'].ge(2).mean() * df['SH_Total'].ge(2).mean() * 100, 1)
     genel_ht_kg = (df['HTHG'] > 0) & (df['HTAG'] > 0)
     genel_sh_kg = (df['SH_Home'] > 0) & (df['SH_Away'] > 0)
@@ -223,11 +219,25 @@ def bulteni_kazi():
                     ms0 = float(ms0_tag.text.strip().replace(',', '.')) if ms0_tag and ms0_tag.text.strip() != '-' else 1.01
                     ms2 = float(ms2_tag.text.strip().replace(',', '.')) if ms2_tag and ms2_tag.text.strip() != '-' else 1.01
                     ust = float(ust_tag.text.strip().replace(',', '.')) if ust_tag and ust_tag.text.strip() != '-' else 1.01
+                    
+                    # GELİŞTİRİLMİŞ KG YAKALAYICI
                     kg = 1.55 
+                    kg_tag = row.find('a', class_=lambda x: x and ('KG' in x.upper() or 'GOL' in x.upper()))
+                    if kg_tag and kg_tag.text.strip() != '-':
+                        try: kg = float(kg_tag.text.strip().replace(',', '.'))
+                        except: pass
+                    else:
+                        tds = row.find_all('td')
+                        for td in tds:
+                            try:
+                                val = float(td.text.strip().replace(',', '.'))
+                                if 1.20 <= val <= 3.00 and val != ms1 and val != ust:
+                                    kg = val; break
+                            except: continue
+
                     if ms1 == 1.01 and ms0 == 1.01: continue
                     takim_adi = "Bilinmeyen Maç"
-                    tds = row.find_all('td')
-                    for td in tds:
+                    for td in row.find_all('td'):
                         if " - " in td.text and len(td.text.strip()) > 5:
                             takim_adi = " ".join(td.text.strip().split())
                             break
@@ -241,7 +251,9 @@ def bulteni_kazi():
 
 # --- KULLANICI ARAYÜZÜ (UI) ---
 st.title("⚽ MacApp Pro | AI Trading & Risk Terminal")
-st.markdown(f"*(**{len(df)}** maçlık makine öğrenmesi arşivi ve Google Sheets entegre hafızası devrede)*")
+
+arsiv_boyutu_str = f"{len(df):,}".replace(",", ".")
+st.markdown(f"*(**{arsiv_boyutu_str}** maçlık canlı makine öğrenmesi arşivi ve Google Sheets entegre hafızası devrede)*")
 
 st.sidebar.header("🌐 Bülten & Maç Seçimi")
 guncel_bulten = bulteni_kazi()
@@ -284,9 +296,10 @@ if st.session_state.get('analiz_tamam', False):
     iy_ms = st.session_state['iy_ms']
     aktif_mac = st.session_state.get('secilen_mac_baslik', 'Özel Maç')
     
-    # 3 Ana Sekme Yapısı
-    tab1, tab2, tab3 = st.tabs([
+    # YENİ 4 SEKME (Nokta Atışı Filtresi Eklendi)
+    tab1, tab2, tab3, tab4 = st.tabs([
         "📊 Görsel Trading Dashboard", 
+        "🎯 Nokta Atışı Özel Oran Tarayıcı",
         "💰 ROI & Value Bet Analizi", 
         "📈 Tahmin Takibi & Öğrenen Karne"
     ])
@@ -301,10 +314,8 @@ if st.session_state.get('analiz_tamam', False):
     
     en_degerli_isim = max(ev_dict, key=lambda x: ev_dict[x]['ev'])
     en_degerli_ev = ev_dict[en_degerli_isim]['ev']
-    
     banko_isim = max(ev_dict, key=lambda x: ev_dict[x]['prob'])
     banko_oran = ev_dict[banko_isim]['oran']
-    
     ideal_isim = en_degerli_isim if en_degerli_ev > 0 else "Pas Geç"
     ideal_oran = ev_dict[en_degerli_isim]['oran'] if en_degerli_ev > 0 else 0.0
     
@@ -324,8 +335,7 @@ if st.session_state.get('analiz_tamam', False):
 
     # --- TAB 1: DASHBOARD ---
     with tab1:
-        st.subheader("🎯 Olasılık Dağılımı ve Piyasa Analizi")
-        
+        st.subheader("🎯 Olasılık Dağılımı ve Piyasa Analizi (KNN 50 Maç)")
         col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("MS 1 Olasılığı", f"%{ms.get('MS 1', 0)}", f"Oran: {ms1_oran}")
         col_m2.metric("MS X Olasılığı", f"%{ms.get('MS 0', 0)}", f"Oran: {ms0_oran}")
@@ -355,7 +365,7 @@ if st.session_state.get('analiz_tamam', False):
             st.dataframe(iy_ms_df, use_container_width=True)
 
         st.markdown("---")
-        st.subheader("🔍 Benzer Maçlar Arşiv Filtresi ve İY/MS Arama")
+        st.subheader("🔍 Benzer 50 Maçlık Arşiv Filtresi ve İY/MS Arama")
         
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1: 
@@ -364,14 +374,66 @@ if st.session_state.get('analiz_tamam', False):
             iyms_secenekler = list(iy_ms.keys())
             iyms_filtre = st.multiselect("İY/MS Kombinasyon Filtrele", options=iyms_secenekler, default=iyms_secenekler)
         with col_f3: 
-            goster_sayi = st.slider("Kayıt Sayısı", 5, 30, 10, 5)
+            goster_sayi = st.slider("Kayıt Sayısı", 5, 50, 10, 5)
         
         ham_benzer = st.session_state['benzer_maclar']
         filtreli_df = ham_benzer[ham_benzer['Sonuç'].isin(ms_filtre) & ham_benzer['İY/MS'].isin(iyms_filtre)]
         st.dataframe(filtreli_df.head(goster_sayi), use_container_width=True)
 
-    # --- TAB 2: ROI & KASA ---
+    # --- TAB 2: YENİ NOKTA ATIŞI FİLTRESİ (CUSTOM FILTER) ---
     with tab2:
+        st.subheader("🎯 Seçili Oranlara Göre Tüm Arşivi Tara (Nokta Atışı)")
+        st.markdown("Yapay zekanın esnek algoritması yerine, **sadece senin belirlediğin oranların birebir aynısına sahip** (veya çok yakın) geçmiş maçları koca arşivde bulur. Bu, şüpheli maçları elemeni sağlayan en güçlü 'manuel risk' filtresidir.")
+
+        col_t1, col_t2 = st.columns([2, 1])
+        with col_t2:
+            tolerans = st.slider("Hassasiyet Toleransı (±)", min_value=0.0, max_value=0.20, value=0.05, step=0.01, help="Örn: 2.10 oran için ±0.05 tolerans, 2.05 ile 2.15 arasındaki tüm maçları getirir.")
+
+        with col_t1:
+            st.markdown("**Hangi Oranlar Birebir Eşleşsin? (Arama Kriterleri)**")
+            c1, c2, c3, c4 = st.columns(4)
+            ara_ms1 = c1.checkbox(f"MS 1 ({ms1_oran})", value=True)
+            ara_ms0 = c2.checkbox(f"MS X ({ms0_oran})", value=False)
+            ara_ms2 = c3.checkbox(f"MS 2 ({ms2_oran})", value=False)
+            ara_ust = c4.checkbox(f"2.5 Üst ({ust_oran})", value=True)
+
+        if st.button("🔍 Tüm Veritabanını Bu Kriterlerle Tara", use_container_width=True):
+            with st.spinner("Koca arşiv taranıyor..."):
+                filtre = pd.Series(True, index=df.index)
+                if ara_ms1: filtre &= df['Open_H'].between(ms1_oran - tolerans, ms1_oran + tolerans)
+                if ara_ms0: filtre &= df['Open_D'].between(ms0_oran - tolerans, ms0_oran + tolerans)
+                if ara_ms2: filtre &= df['Open_A'].between(ms2_oran - tolerans, ms2_oran + tolerans)
+                if ara_ust: filtre &= df['Open_O25'].between(ust_oran - tolerans, ust_oran + tolerans)
+
+                bulunan_maclar = df[filtre].copy()
+
+                if len(bulunan_maclar) == 0:
+                    st.warning("⚠️ Bu tam oran kombinasyonuna sahip geçmiş maç bulunamadı. Toleransı (±) artırmayı veya daha az oran seçmeyi deneyin.")
+                else:
+                    st.success(f"✅ Toplam {len(bulunan_maclar)} eşleşen maç bulundu!")
+                    
+                    # Sonuç Haritası Çıkarma
+                    b_ms1 = len(bulunan_maclar[bulunan_maclar['res'] == 'H'])
+                    b_ms0 = len(bulunan_maclar[bulunan_maclar['res'] == 'D'])
+                    b_ms2 = len(bulunan_maclar[bulunan_maclar['res'] == 'A'])
+                    b_ust = len(bulunan_maclar[bulunan_maclar['tot'] > 2.5])
+                    b_kg = len(bulunan_maclar[(bulunan_maclar['FTHG'] > 0) & (bulunan_maclar['FTAG'] > 0)])
+                    
+                    mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+                    mc1.metric("Biten MS 1", f"%{round((b_ms1/len(bulunan_maclar))*100,1)}")
+                    mc2.metric("Biten MS X", f"%{round((b_ms0/len(bulunan_maclar))*100,1)}")
+                    mc3.metric("Biten MS 2", f"%{round((b_ms2/len(bulunan_maclar))*100,1)}")
+                    mc4.metric("Biten 2.5 ÜST", f"%{round((b_ust/len(bulunan_maclar))*100,1)}")
+                    mc5.metric("Biten KG VAR", f"%{round((b_kg/len(bulunan_maclar))*100,1)}")
+                    
+                    st.markdown("#### 📋 Eşleşen Maçların Tam Listesi")
+                    gosterge_df = bulunan_maclar[['Date', 'HomeTeam', 'AwayTeam', 'Open_H', 'Open_D', 'Open_A', 'Open_O25', 'FTHG', 'FTAG']].copy()
+                    gosterge_df['Skor'] = gosterge_df['FTHG'].astype(int).astype(str) + " - " + gosterge_df['FTAG'].astype(int).astype(str)
+                    gosterge_df = gosterge_df.rename(columns={'Date':'Tarih', 'HomeTeam':'Ev Sahibi', 'AwayTeam':'Deplasman', 'Open_H':'MS 1', 'Open_D':'MS X', 'Open_A':'MS 2', 'Open_O25':'2.5 Üst'})
+                    st.dataframe(gosterge_df[['Tarih', 'Ev Sahibi', 'Deplasman', 'MS 1', 'MS X', 'MS 2', '2.5 Üst', 'Skor']], use_container_width=True)
+
+    # --- TAB 3: ROI & KASA ---
+    with tab3:
         st.subheader("💎 Value Bet & Beklenen Değer (EV) Hesaplayıcı")
         if en_degerli_ev > 0:
             st.success(f"🎯 **AVANTAJLI BAHİS (VALUE):** Büronun açığı **{en_degerli_isim}** tercihinde yakalandı! Beklenen Değer (EV): **+{en_degerli_ev}**")
@@ -406,8 +468,8 @@ if st.session_state.get('analiz_tamam', False):
             takip_dosyasi_kaydet(df_takip)
             st.toast("✅ Analiz kalıcı hafızaya kaydedildi!", icon="📌")
 
-    # --- TAB 3: TAHMİN TAKİBİ ---
-    with tab3:
+    # --- TAB 4: TAHMİN TAKİBİ ---
+    with tab4:
         st.subheader("📈 Tahmin Takibi & Gelişmiş Sonuç / İstatistik Paneli")
         df_takip = takip_dosyasi_yukle()
         
