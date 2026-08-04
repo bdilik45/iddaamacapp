@@ -170,7 +170,6 @@ except Exception as e:
     st.error(f"Veri seti yüklenirken hata oluştu. Detay: {e}")
     st.stop()
 
-# GOOGLE API KOTASINI AŞMAMAK İÇİN TREND BONUSU DIŞARIDAN ALIYORUZ
 def analiz_et(ph, pd_oran, pa, pover, trend_bonus=1.00):
     sorgu = np.array([[ph, pd_oran, pa, pover]])
     mesafeler, indeksler = knn.kneighbors(sorgu)
@@ -196,7 +195,7 @@ def analiz_et(ph, pd_oran, pa, pover, trend_bonus=1.00):
     genel_iki_yari_kg_ortalama = round((genel_ht_kg & genel_sh_kg).mean() * 100, 1)
     
     fark_iki_yari_15 = round(iki_yari_15_ust_yuzdesi - genel_iki_yari_15_ortalama, 1)
-    fark_iki_yari_kg = round(iki_yari_kg_yuzdesi - genel_iki_yari_kg_ortalama, 1)
+    fark_iki_yari_kg = round(iki_yari_kg_yuzdesi - round((genel_ht_kg & genel_sh_kg).mean() * 100, 1), 1)
 
     hedef_maclar['IY_Kod'] = np.where(hedef_maclar['HTHG'] > hedef_maclar['HTAG'], '1', 
                              np.where(hedef_maclar['HTHG'] < hedef_maclar['HTAG'], '2', '0'))
@@ -315,7 +314,6 @@ pover_gercek = (1 / ust_oran) / 1.06
 
 if st.sidebar.button("🚀 Yapay Zeka Analizini Başlat", use_container_width=True):
     with st.spinner("Model benzer tarihi maçları tarıyor ve risk hesaplıyor..."):
-        # Google Sheets'e sadece bir kere baglanir
         df_takip = takip_dosyasi_yukle()
         tamamlananlar = df_takip[df_takip['Durum'] == 'Tamamlandı']
         aktif_trend = 1.04 if len(tamamlananlar) > 0 else 1.00
@@ -335,7 +333,6 @@ if st.session_state.get('analiz_tamam', False):
     iy_ms = st.session_state['iy_ms']
     aktif_mac = st.session_state.get('secilen_mac_baslik', 'Özel Maç')
     
-    # 5. SEKME EKLENDİ
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Görsel Trading Dashboard", 
         "🎯 Nokta Atışı Özel Oran Tarayıcı",
@@ -650,10 +647,9 @@ if st.session_state.get('analiz_tamam', False):
             ilerleme_cubugu = st.progress(0)
             durum_metni = st.empty()
             
-            toplam_mac = len(guncel_bulten) - 1 # Manuel girişi çıkar
+            toplam_mac = len(guncel_bulten) - 1
             islenen = 0
             
-            # GOOGLE API KOTASINI KORUMAK İÇİN TREND BONUSU BİR KERE ALINIYOR
             df_takip = takip_dosyasi_yukle()
             tamamlananlar = df_takip[df_takip['Durum'] == 'Tamamlandı']
             aktif_trend = 1.04 if len(tamamlananlar) > 0 else 1.00
@@ -676,12 +672,11 @@ if st.session_state.get('analiz_tamam', False):
                 try:
                     t_marj = (1 / oranlar['ms1']) + (1 / oranlar['ms0']) + (1 / oranlar['ms2'])
                     ph = (1 / oranlar['ms1']) / t_marj
-                    pd = (1 / oranlar['ms0']) / t_marj
+                    pd_oran = (1 / oranlar['ms0']) / t_marj
                     pa = (1 / oranlar['ms2']) / t_marj
                     pover = (1 / oranlar['ust']) / 1.06
                     
-                    # Ana analiz motorunu dış trend bonusu ile çalıştır
-                    _, kg_yuzdesi, ust_yuzdesi, tablo_df, _, _, _, _, _, _ = analiz_et(ph, pd, pa, pover, aktif_trend)
+                    _, kg_yuzdesi, ust_yuzdesi, tablo_df, _, _, _, _, _, _ = analiz_et(ph, pd_oran, pa, pover, aktif_trend)
                     
                     iy_goller = tablo_df['İlk Yarı Skoru'].apply(iy_gol_hesapla)
                     iy_05_yuzde = round((iy_goller > 0).mean() * 100, 1)
