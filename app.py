@@ -82,7 +82,7 @@ def oran_duzelt(deger):
         return round(val, 2)
     except: return deger
 
-# --- BÜRO VE SÜTUN TESPİT HARİTASI (GENİŞLETİLDİ) ---
+# --- BÜRO VE SÜTUN TESPİT HARİTASI ---
 BURO_MAP = {
     "Bet365": {
         "MS 1": ["B365H", "B365_H", "Bet365_1", "B365CH"],
@@ -127,7 +127,6 @@ def motoru_baslat():
     df['SH_Away'] = df['FTAG'] - df['HTAG']
     df['SH_Total'] = df['SH_Home'] + df['SH_Away']
     
-    # 1. AKILLI ORAN KURTARICI (BÜTÜN SATIRLARI KORUYAN YENİ YAPI)
     def sutun_birlestir(veri, sutun_listesi):
         mevcut = [c for c in sutun_listesi if c in veri.columns]
         if not mevcut: return pd.Series([np.nan]*len(veri), index=veri.index)
@@ -142,11 +141,8 @@ def motoru_baslat():
     df['Open_O25'] = sutun_birlestir(df, ['B365>2.5', 'B365_O25', 'P>2.5', 'Max>2.5', 'Avg>2.5', 'BbMx>2.5'])
     df['Open_U25'] = sutun_birlestir(df, ['B365<2.5', 'B365_U25', 'P<2.5', 'Max<2.5', 'Avg<2.5', 'BbMx<2.5'])
     
-   # 2. GADDAR TEKİLLEŞTİRME (KİRLİ TARİH VERİSİNİ YOK SAYAR)
-    # Eğer takımlar, maç sonu skoru ve açılış oranları (MS1, X, 2) tamamen aynıysa bu kesinlikle mükerrer kayıttır (tarih yanlış yazılmış olsa bile).
+    # KİRLİ TARİH VERİSİ FİLTRESİ
     df = df.drop_duplicates(subset=['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'Open_H', 'Open_D', 'Open_A'])
-    
-    # Hayati gol verisi eksikse sil
     df = df.dropna(subset=['FTHG', 'FTAG'])
     
     margin = (1 / df['Open_H']) + (1 / df['Open_D']) + (1 / df['Open_A'])
@@ -158,7 +154,6 @@ def motoru_baslat():
                            (1 / df['Open_O25']) / ((1 / df['Open_O25']) + (1 / df['Open_U25'])), 
                            (1 / df['Open_O25']) / 1.06)
                            
-    # EKSİK ORANLARI MEDYAN İLE DOLDUR Kİ YÜZ BİNLERCE MAÇ ÇÖPE GİTMESİN
     for col in ['pH', 'pD', 'pA', 'pOver']:
         df[col] = df[col].fillna(df[col].median())
     
@@ -175,14 +170,11 @@ except Exception as e:
     st.error(f"Veri seti yüklenirken hata oluştu. Detay: {e}")
     st.stop()
 
-def analiz_et(ph, pd_oran, pa, pover):
+# GOOGLE API KOTASINI AŞMAMAK İÇİN TREND BONUSU DIŞARIDAN ALIYORUZ
+def analiz_et(ph, pd_oran, pa, pover, trend_bonus=1.00):
     sorgu = np.array([[ph, pd_oran, pa, pover]])
     mesafeler, indeksler = knn.kneighbors(sorgu)
     hedef_maclar = df.iloc[indeksler[0]].copy()
-    
-    df_takip = takip_dosyasi_yukle()
-    tamamlananlar = df_takip[df_takip['Durum'] == 'Tamamlandı']
-    trend_bonus = 1.04 if len(tamamlananlar) > 0 else 1.00
     
     res_map = {'H': 'MS 1', 'D': 'MS 0', 'A': 'MS 2'}
     hedef_maclar['MS_Kod'] = hedef_maclar['res'].map(res_map)
@@ -268,15 +260,12 @@ def bulteni_kazi():
                     ms2 = float(ms2_tag.text.strip().replace(',', '.')) if ms2_tag and ms2_tag.text.strip() != '-' else 1.01
                     ust = float(ust_tag.text.strip().replace(',', '.')) if ust_tag and ust_tag.text.strip() != '-' else 1.01
                     
-                    # YENİ KG VAR TESPİT ALGORİTMASI (Hata Düzeltildi)
                     kg = 1.55 
                     kg_tag = row.find('a', class_=lambda x: x and x in ['KGV', 'KGVAR', 'Var'])
                     if kg_tag and kg_tag.text.strip() != '-':
                         try: kg = float(kg_tag.text.strip().replace(',', '.'))
                         except: pass
                     else:
-                        # Ana sayfada kolon yoksa rastgele oran alma, üst oranına göre tahmini bir rakam koy. 
-                        # Kullanıcı sol panelden gerçeğiyle manuel değiştirebilir!
                         if ust > 1.01:
                             kg = round(ust * 0.95, 2) if ust < 1.70 else 1.65
 
@@ -293,6 +282,7 @@ def bulteni_kazi():
     except:
         st.sidebar.warning("⚠️ Canlı bülten alınamadı. Standart mod aktif.")
     return cekilen_maclar
+
 # --- KULLANICI ARAYÜZÜ (UI) ---
 st.title("⚽ MacApp Pro | AI Trading & Risk Terminal")
 
@@ -325,7 +315,12 @@ pover_gercek = (1 / ust_oran) / 1.06
 
 if st.sidebar.button("🚀 Yapay Zeka Analizini Başlat", use_container_width=True):
     with st.spinner("Model benzer tarihi maçları tarıyor ve risk hesaplıyor..."):
-        ms, kg_yuzdesi, ust_yuzdesi, benzer_maclar, iy_ms, iki_yari_15_ust, iki_yari_kg, fark_15, fark_kg, stats = analiz_et(ph_gercek, pd_gercek, pa_gercek, pover_gercek)
+        # Google Sheets'e sadece bir kere baglanir
+        df_takip = takip_dosyasi_yukle()
+        tamamlananlar = df_takip[df_takip['Durum'] == 'Tamamlandı']
+        aktif_trend = 1.04 if len(tamamlananlar) > 0 else 1.00
+        
+        ms, kg_yuzdesi, ust_yuzdesi, benzer_maclar, iy_ms, iki_yari_15_ust, iki_yari_kg, fark_15, fark_kg, stats = analiz_et(ph_gercek, pd_gercek, pa_gercek, pover_gercek, aktif_trend)
         st.session_state.update({
             'analiz_tamam': True, 'ms': ms, 'kg_yuzdesi': kg_yuzdesi, 'ust_yuzdesi': ust_yuzdesi,
             'benzer_maclar': benzer_maclar, 'iy_ms': iy_ms, 'iki_yari_15_ust': iki_yari_15_ust,
@@ -340,6 +335,7 @@ if st.session_state.get('analiz_tamam', False):
     iy_ms = st.session_state['iy_ms']
     aktif_mac = st.session_state.get('secilen_mac_baslik', 'Özel Maç')
     
+    # 5. SEKME EKLENDİ
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Görsel Trading Dashboard", 
         "🎯 Nokta Atışı Özel Oran Tarayıcı",
@@ -428,7 +424,6 @@ if st.session_state.get('analiz_tamam', False):
     with tab2:
         st.subheader("🎯 Çoklu Büro ve Genişletilmiş Market Oran Tarayıcı")
         
-        # --- EKLENEN YENİ SİHİRLİ BUTON (SÜTUN KEŞFEDİCİ) ---
         with st.expander("🛠️ Veritabanımdaki Orijinal Sütunları Gör (Eğer sütun bulunamadı hatası alıyorsan buraya tıkla)"):
             st.write("Aşağıdaki liste senin .parquet dosyanın içinde yer alan *gerçek* sütun isimleridir. Eğer 'KG Var' veya '1.5 Üst' eksik uyarısı alırsan, o verinin bu listede hangi isimle (Örn: BTTS, U15 vs.) kaydedildiğini bulup koddaki BURO_MAP kısmına ekleyebilirsin.")
             st.write(df.columns.tolist())
@@ -644,7 +639,8 @@ if st.session_state.get('analiz_tamam', False):
                     st.rerun()
             else:
                 st.info("🎉 Bekleyen maçınız bulunmuyor.")
-# --- TAB 5: OTOMATİK BÜLTEN TARAYICI (RADAR) ---
+
+    # --- TAB 5: OTOMATİK BÜLTEN TARAYICI (RADAR) ---
     with tab5:
         st.subheader("🤖 Tüm Bülteni Yapay Zeka ile Tara (Fırsat Radarı)")
         st.markdown("Bültendeki oynanmamış tüm maçları tek tuşla tarayıp; KG Var, 2.5 Üst ve İlk Yarı Gol olasılıklarına göre analiz eder. **Sıralamak için sütun başlıklarına tıklaman yeterlidir.**")
@@ -657,7 +653,18 @@ if st.session_state.get('analiz_tamam', False):
             toplam_mac = len(guncel_bulten) - 1 # Manuel girişi çıkar
             islenen = 0
             
-            # Sözlükteki tüm maçları döngüye sokuyoruz
+            # GOOGLE API KOTASINI KORUMAK İÇİN TREND BONUSU BİR KERE ALINIYOR
+            df_takip = takip_dosyasi_yukle()
+            tamamlananlar = df_takip[df_takip['Durum'] == 'Tamamlandı']
+            aktif_trend = 1.04 if len(tamamlananlar) > 0 else 1.00
+            
+            def iy_gol_hesapla(x):
+                try:
+                    a, b = x.split(' - ')
+                    return int(a) + int(b)
+                except:
+                    return 0
+            
             for mac_adi, oranlar in guncel_bulten.items():
                 if mac_adi == "Manuel Giriş (Özel Maç Tanımla)":
                     continue
@@ -667,18 +674,16 @@ if st.session_state.get('analiz_tamam', False):
                 ilerleme_cubugu.progress(islenen / toplam_mac)
                 
                 try:
-                    # Gerçek marj ve oran hesaplamaları
                     t_marj = (1 / oranlar['ms1']) + (1 / oranlar['ms0']) + (1 / oranlar['ms2'])
                     ph = (1 / oranlar['ms1']) / t_marj
                     pd = (1 / oranlar['ms0']) / t_marj
                     pa = (1 / oranlar['ms2']) / t_marj
                     pover = (1 / oranlar['ust']) / 1.06
                     
-                    # Ana analiz motorunu sessizce çalıştır
-                    _, kg_yuzdesi, ust_yuzdesi, tablo_df, _, _, _, _, _, _ = analiz_et(ph, pd, pa, pover)
+                    # Ana analiz motorunu dış trend bonusu ile çalıştır
+                    _, kg_yuzdesi, ust_yuzdesi, tablo_df, _, _, _, _, _, _ = analiz_et(ph, pd, pa, pover, aktif_trend)
                     
-                    # İlk Yarı Olasılıklarını hedef maçların skorlarından türet
-                    iy_goller = tablo_df['İlk Yarı Skoru'].apply(lambda x: sum(map(int, x.split(' - '))))
+                    iy_goller = tablo_df['İlk Yarı Skoru'].apply(iy_gol_hesapla)
                     iy_05_yuzde = round((iy_goller > 0).mean() * 100, 1)
                     iy_15_yuzde = round((iy_goller > 1).mean() * 100, 1)
                     
@@ -693,7 +698,6 @@ if st.session_state.get('analiz_tamam', False):
                         "İY 1.5 ÜST (%)": float(iy_15_yuzde)
                     })
                 except Exception as e:
-                    # Hata veren (arşivde benzeri bulunmayan) sıradışı maçları atla
                     continue
                     
             if bulten_sonuclari:
@@ -701,7 +705,6 @@ if st.session_state.get('analiz_tamam', False):
                 ilerleme_cubugu.empty()
                 durum_metni.success("✅ Tüm bülten analizi tamamlandı! Hedef olasılıkların sütun başlıklarına (Örn: KG VAR) tıklayarak en yüksekten düşüğe doğru sıralayabilirsin.")
                 
-                # Pandas Styler ile ısı haritası (renklendirme) ekleyerek görselleştir
                 st.dataframe(
                     df_bulten.style.background_gradient(
                         cmap='Greens', 
@@ -715,4 +718,3 @@ if st.session_state.get('analiz_tamam', False):
             else:
                 ilerleme_cubugu.empty()
                 durum_metni.error("Analiz edilecek maç bulunamadı veya bir hata oluştu.")
-
