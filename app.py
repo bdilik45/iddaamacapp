@@ -9,6 +9,36 @@ import json
 import warnings
 warnings.filterwarnings('ignore')
 
+# --- BÜRO VE SÜTUN TESPİT HARİTASI ---
+BURO_MAP = {
+    "Bet365": {
+        "MS 1": ["B365H", "B365_H", "Bet365_1"],
+        "MS X": ["B365D", "B365_D", "Bet365_X"],
+        "MS 2": ["B365A", "B365_A", "Bet365_2"],
+        "2.5 Üst": ["B365>2.5", "B365_O25", "B365_Over25"],
+        "2.5 Alt": ["B365<2.5", "B365_U25", "B365_Under25"],
+        "1.5 Üst": ["B365>1.5", "B365_O15"],
+        "KG Var": ["B365_BTS_Y", "B365_BTTS_Yes", "B365_KG_Var", "B365_KG"],
+        "İY 1": ["B365_1H_1", "B365HTH", "HT_B365H", "B365_HT1"]
+    },
+    "Pinnacle": {
+        "MS 1": ["PSH", "PinnacleH", "PS_H", "MaxH"],
+        "MS X": ["PSD", "PinnacleD", "PS_D", "MaxD"],
+        "MS 2": ["PSA", "PinnacleA", "PS_A", "MaxA"],
+        "2.5 Üst": ["P>2.5", "PS>2.5", "Pinnacle>2.5", "Max>2.5"],
+        "2.5 Alt": ["P<2.5", "PS<2.5", "Pinnacle<2.5", "Max<2.5"],
+        "1.5 Üst": ["P>1.5", "PS>1.5", "Max>1.5"],
+        "KG Var": ["PS_BTS_Y", "PS_BTTS_Yes", "Pinnacle_KG_Var", "PS_KG"],
+        "İY 1": ["PS_1H_1", "PSHTH", "HT_PSH", "PS_HT1"]
+    }
+}
+
+def sutun_getir(df, olasi_sutunlar):
+    for col in olasi_sutunlar:
+        if col in df.columns:
+            return col
+    return None
+
 # --- SAYFA VE TEMA AYARLARI ---
 st.set_page_config(page_title="MacApp Pro | Trading Terminal", page_icon="⚽", layout="wide")
 
@@ -380,57 +410,121 @@ if st.session_state.get('analiz_tamam', False):
         filtreli_df = ham_benzer[ham_benzer['Sonuç'].isin(ms_filtre) & ham_benzer['İY/MS'].isin(iyms_filtre)]
         st.dataframe(filtreli_df.head(goster_sayi), use_container_width=True)
 
-    # --- TAB 2: YENİ NOKTA ATIŞI FİLTRESİ (CUSTOM FILTER) ---
+    # --- TAB 2: NOKTA ATIŞI ÖZEL ORAN TARAYICI (Gelişmiş Çoklu Market & Büro Filtresi) ---
     with tab2:
-        st.subheader("🎯 Seçili Oranlara Göre Tüm Arşivi Tara (Nokta Atışı)")
-        st.markdown("Yapay zekanın esnek algoritması yerine, **sadece senin belirlediğin oranların birebir aynısına sahip** (veya çok yakın) geçmiş maçları koca arşivde bulur. Bu, şüpheli maçları elemeni sağlayan en güçlü 'manuel risk' filtresidir.")
+        st.subheader("🎯 Çoklu Büro ve Genişletilmiş Market Oran Tarayıcı")
+        st.markdown("Arşivdeki **Bet365** veya **Pinnacle** sağlayıcılarının oranlarını seçip, **8 farklı bahis marketi** üzerinden birebir veya toleranslı eşleşme araması yapabilirsin.")
 
-        col_t1, col_t2 = st.columns([2, 1])
-        with col_t2:
-            tolerans = st.slider("Hassasiyet Toleransı (±)", min_value=0.0, max_value=0.20, value=0.05, step=0.01, help="Örn: 2.10 oran için ±0.05 tolerans, 2.05 ile 2.15 arasındaki tüm maçları getirir.")
+        c_buro, c_tol = st.columns([1, 1])
+        with c_buro:
+            secili_buro = st.radio("🏢 Sağlayıcı (Büro) Seçimi:", ["Bet365", "Pinnacle"], horizontal=True)
+        with c_tol:
+            tolerans = st.slider("🎯 Hassasiyet Toleransı (±)", min_value=0.0, max_value=0.20, value=0.05, step=0.01, help="Örn: 2.10 oran için ±0.05 tolerans, 2.05 ile 2.15 arasındaki tüm maçları getirir.")
 
-        with col_t1:
-            st.markdown("**Hangi Oranlar Birebir Eşleşsin? (Arama Kriterleri)**")
-            c1, c2, c3, c4 = st.columns(4)
-            ara_ms1 = c1.checkbox(f"MS 1 ({ms1_oran})", value=True)
-            ara_ms0 = c2.checkbox(f"MS X ({ms0_oran})", value=False)
-            ara_ms2 = c3.checkbox(f"MS 2 ({ms2_oran})", value=False)
-            ara_ust = c4.checkbox(f"2.5 Üst ({ust_oran})", value=True)
+        st.markdown("---")
+        st.markdown(f"### 📊 {secili_buro} Oran Kriterleri & Market Seçimi")
+        
+        # Müşterek Oran Değerleri
+        ornek_oranlar = {
+            "MS 1": float(ms1_oran),
+            "MS X": float(ms0_oran),
+            "MS 2": float(ms2_oran),
+            "2.5 Üst": float(ust_oran),
+            "2.5 Alt": 1.95,
+            "1.5 Üst": 1.25,
+            "KG Var": float(kg_oran),
+            "İY 1": 2.75
+        }
 
-        if st.button("🔍 Tüm Veritabanını Bu Kriterlerle Tara", use_container_width=True):
-            with st.spinner("Koca arşiv taranıyor..."):
-                filtre = pd.Series(True, index=df.index)
-                if ara_ms1: filtre &= df['Open_H'].between(ms1_oran - tolerans, ms1_oran + tolerans)
-                if ara_ms0: filtre &= df['Open_D'].between(ms0_oran - tolerans, ms0_oran + tolerans)
-                if ara_ms2: filtre &= df['Open_A'].between(ms2_oran - tolerans, ms2_oran + tolerans)
-                if ara_ust: filtre &= df['Open_O25'].between(ust_oran - tolerans, ust_oran + tolerans)
+        # Market Seçim Kutuları (8 Farklı Market)
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        col_m5, col_m6, col_m7, col_m8 = st.columns(4)
 
-                bulunan_maclar = df[filtre].copy()
+        secimler = {}
+        secimler["MS 1"] = col_m1.checkbox(f"MS 1 ({ornek_oranlar['MS 1']:.2f})", value=True)
+        secimler["MS X"] = col_m2.checkbox(f"MS X ({ornek_oranlar['MS X']:.2f})", value=False)
+        secimler["MS 2"] = col_m3.checkbox(f"MS 2 ({ornek_oranlar['MS 2']:.2f})", value=False)
+        secimler["2.5 Üst"] = col_m4.checkbox(f"2.5 Üst ({ornek_oranlar['2.5 Üst']:.2f})", value=True)
 
-                if len(bulunan_maclar) == 0:
-                    st.warning("⚠️ Bu tam oran kombinasyonuna sahip geçmiş maç bulunamadı. Toleransı (±) artırmayı veya daha az oran seçmeyi deneyin.")
+        secimler["2.5 Alt"] = col_m5.checkbox("2.5 Alt", value=False)
+        secimler["1.5 Üst"] = col_m6.checkbox("1.5 Üst", value=False)
+        secimler["KG Var"] = col_m7.checkbox(f"KG Var ({ornek_oranlar['KG Var']:.2f})", value=False)
+        secimler["İY 1"] = col_m8.checkbox("İY 1 (İlk Yarı)", value=False)
+
+        # Aktif Edilen Kriterleri Toplama ve Veri Seti Sütunlarıyla Eşleştirme
+        aktif_kriterler = {}
+        for market, aktif in secimler.items():
+            if aktif:
+                sutun_adi = sutun_getir(df, BURO_MAP[secili_buro][market])
+                if sutun_adi:
+                    aktif_kriterler[market] = {
+                        "sutun": sutun_adi,
+                        "deger": ornek_oranlar[market]
+                    }
                 else:
-                    st.success(f"✅ Toplam {len(bulunan_maclar)} eşleşen maç bulundu!")
-                    
-                    # Sonuç Haritası Çıkarma
-                    b_ms1 = len(bulunan_maclar[bulunan_maclar['res'] == 'H'])
-                    b_ms0 = len(bulunan_maclar[bulunan_maclar['res'] == 'D'])
-                    b_ms2 = len(bulunan_maclar[bulunan_maclar['res'] == 'A'])
-                    b_ust = len(bulunan_maclar[bulunan_maclar['tot'] > 2.5])
-                    b_kg = len(bulunan_maclar[(bulunan_maclar['FTHG'] > 0) & (bulunan_maclar['FTAG'] > 0)])
-                    
-                    mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-                    mc1.metric("Biten MS 1", f"%{round((b_ms1/len(bulunan_maclar))*100,1)}")
-                    mc2.metric("Biten MS X", f"%{round((b_ms0/len(bulunan_maclar))*100,1)}")
-                    mc3.metric("Biten MS 2", f"%{round((b_ms2/len(bulunan_maclar))*100,1)}")
-                    mc4.metric("Biten 2.5 ÜST", f"%{round((b_ust/len(bulunan_maclar))*100,1)}")
-                    mc5.metric("Biten KG VAR", f"%{round((b_kg/len(bulunan_maclar))*100,1)}")
-                    
-                    st.markdown("#### 📋 Eşleşen Maçların Tam Listesi")
-                    gosterge_df = bulunan_maclar[['Date', 'HomeTeam', 'AwayTeam', 'Open_H', 'Open_D', 'Open_A', 'Open_O25', 'FTHG', 'FTAG']].copy()
-                    gosterge_df['Skor'] = gosterge_df['FTHG'].astype(int).astype(str) + " - " + gosterge_df['FTAG'].astype(int).astype(str)
-                    gosterge_df = gosterge_df.rename(columns={'Date':'Tarih', 'HomeTeam':'Ev Sahibi', 'AwayTeam':'Deplasman', 'Open_H':'MS 1', 'Open_D':'MS X', 'Open_A':'MS 2', 'Open_O25':'2.5 Üst'})
-                    st.dataframe(gosterge_df[['Tarih', 'Ev Sahibi', 'Deplasman', 'MS 1', 'MS X', 'MS 2', '2.5 Üst', 'Skor']], use_container_width=True)
+                    st.warning(f"⚠️ {secili_buro} için '{market}' sütunu veritabanında bulunamadı, bu kriter atlanacak.")
+
+        if st.button(f"🔍 {secili_buro} Veritabanını Bu Marketlerle Tara", use_container_width=True):
+            if not aktif_kriterler:
+                st.warning("Lütfen arama yapmak için en az bir aktif bahis marketi seçin.")
+            else:
+                with st.spinner(f"{secili_buro} oranları taranıyor..."):
+                    filtre = pd.Series(True, index=df.index)
+                    for market, veri in aktif_kriterler.items():
+                        s_col = veri["sutun"]
+                        s_val = veri["deger"]
+                        filtre &= df[s_col].between(s_val - tolerans, s_val + tolerans)
+
+                    bulunan_maclar = df[filtre].copy()
+
+                    if len(bulunan_maclar) == 0:
+                        st.warning(f"⚠️ {secili_buro} tarafında bu oran kombinasyonuna sahip geçmiş maç bulunamadı. Toleransı (±) artırmayı veya daha az filtre seçmeyi deneyin.")
+                    else:
+                        st.success(f"✅ Toplam **{len(bulunan_maclar)}** eşleşen maç bulundu! ({secili_buro} Oranlarıyla)")
+
+                        # İstatistik Hesaplamaları
+                        b_ms1 = len(bulunan_maclar[bulunan_maclar['res'] == 'H'])
+                        b_ms0 = len(bulunan_maclar[bulunan_maclar['res'] == 'D'])
+                        b_ms2 = len(bulunan_maclar[bulunan_maclar['res'] == 'A'])
+                        b_ust25 = len(bulunan_maclar[bulunan_maclar['tot'] > 2.5])
+                        b_kg = len(bulunan_maclar[(bulunan_maclar['FTHG'] > 0) & (bulunan_maclar['FTAG'] > 0)])
+                        
+                        b_1X = len(bulunan_maclar[bulunan_maclar['res'].isin(['H', 'D'])])
+                        b_12 = len(bulunan_maclar[bulunan_maclar['res'].isin(['H', 'A'])])
+                        b_02 = len(bulunan_maclar[bulunan_maclar['res'].isin(['D', 'A'])])
+                        b_iy05 = len(bulunan_maclar[(bulunan_maclar['HTHG'] + bulunan_maclar['HTAG']) > 0])
+                        b_iy15 = len(bulunan_maclar[(bulunan_maclar['HTHG'] + bulunan_maclar['HTAG']) > 1])
+                        b_ust35 = len(bulunan_maclar[bulunan_maclar['tot'] > 3.5])
+
+                        # Metrik Gösterimleri
+                        st.markdown("#### 🏆 Maç Sonu & Gol Dağılım Oranları")
+                        m1, m2, m3, m4, m5, m6 = st.columns(6)
+                        m1.metric("MS 1", f"%{round((b_ms1/len(bulunan_maclar))*100,1)}")
+                        m2.metric("MS X", f"%{round((b_ms0/len(bulunan_maclar))*100,1)}")
+                        m3.metric("MS 2", f"%{round((b_ms2/len(bulunan_maclar))*100,1)}")
+                        m4.metric("2.5 ÜST", f"%{round((b_ust25/len(bulunan_maclar))*100,1)}")
+                        m5.metric("3.5 ÜST", f"%{round((b_ust35/len(bulunan_maclar))*100,1)}")
+                        m6.metric("KG VAR", f"%{round((b_kg/len(bulunan_maclar))*100,1)}")
+
+                        st.markdown("#### 🛡️ Çifte Şans & İY Gol Detayları")
+                        e1, e2, e3, e4, e5 = st.columns(5)
+                        e1.metric("1X Çifte Şans", f"%{round((b_1X/len(bulunan_maclar))*100,1)}")
+                        e2.metric("12 Çifte Şans", f"%{round((b_12/len(bulunan_maclar))*100,1)}")
+                        e3.metric("X2 Çifte Şans", f"%{round((b_02/len(bulunan_maclar))*100,1)}")
+                        e4.metric("İY 0.5 ÜST", f"%{round((b_iy05/len(bulunan_maclar))*100,1)}")
+                        e5.metric("İY 1.5 ÜST", f"%{round((b_iy15/len(bulunan_maclar))*100,1)}")
+
+                        st.markdown("#### 📋 Eşleşen Maçların Detaylı Listesi")
+                        
+                        goster_sutunlar = ['Date', 'HomeTeam', 'AwayTeam', 'HTHG', 'HTAG', 'FTHG', 'FTAG']
+                        for m_key, m_val in aktif_kriterler.items():
+                            goster_sutunlar.append(m_val['sutun'])
+                        
+                        gosterge_df = bulunan_maclar[list(dict.fromkeys(goster_sutunlar))].copy()
+                        gosterge_df['İY Skor'] = gosterge_df['HTHG'].fillna(0).astype(int).astype(str) + " - " + gosterge_df['HTAG'].fillna(0).astype(int).astype(str)
+                        gosterge_df['MS Skor'] = gosterge_df['FTHG'].fillna(0).astype(int).astype(str) + " - " + gosterge_df['FTAG'].fillna(0).astype(int).astype(str)
+                        
+                        st.dataframe(gosterge_df, use_container_width=True)
 
     # --- TAB 3: ROI & KASA ---
     with tab3:
