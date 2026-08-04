@@ -118,6 +118,12 @@ def motoru_baslat():
     veri_yolu = "iddaa_arsiv_YEDEK.parquet" 
     df = pd.read_parquet(veri_yolu)
     
+    # 2020 VE SONRASI FİLTRESİ
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        df = df[df['Date'].dt.year >= 2020]
+        df['Date'] = df['Date'].dt.strftime('%Y-%m-%d') # Tabloda saat sıfırları görünmesin diye temizliyoruz
+    
     df['Mac'] = df['HomeTeam'] + " - " + df['AwayTeam']
     df['res'] = df['FTR']  
     df['tot'] = df['FTHG'] + df['FTAG']  
@@ -286,7 +292,7 @@ def bulteni_kazi():
 st.title("⚽ MacApp Pro | AI Trading & Risk Terminal")
 
 arsiv_boyutu_str = f"{len(df):,}".replace(",", ".")
-st.markdown(f"*(**{arsiv_boyutu_str}** maçlık canlı makine öğrenmesi arşivi ve Google Sheets entegre hafızası devrede)*")
+st.markdown(f"*(2020 ve sonrası **{arsiv_boyutu_str}** maçlık filtreli makine öğrenmesi arşivi devrede)*")
 
 st.sidebar.header("🌐 Bülten & Maç Seçimi")
 guncel_bulten = bulteni_kazi()
@@ -421,8 +427,7 @@ if st.session_state.get('analiz_tamam', False):
     with tab2:
         st.subheader("🎯 Çoklu Büro ve Genişletilmiş Market Oran Tarayıcı")
         
-        with st.expander("🛠️ Veritabanımdaki Orijinal Sütunları Gör (Eğer sütun bulunamadı hatası alıyorsan buraya tıkla)"):
-            st.write("Aşağıdaki liste senin .parquet dosyanın içinde yer alan *gerçek* sütun isimleridir. Eğer 'KG Var' veya '1.5 Üst' eksik uyarısı alırsan, o verinin bu listede hangi isimle (Örn: BTTS, U15 vs.) kaydedildiğini bulup koddaki BURO_MAP kısmına ekleyebilirsin.")
+        with st.expander("🛠️ Veritabanımdaki Orijinal Sütunları Gör"):
             st.write(df.columns.tolist())
             
         st.markdown("Arşivdeki **Bet365** veya **Pinnacle** sağlayıcılarının oranlarını seçip, **8 farklı bahis marketi** üzerinden birebir veya toleranslı eşleşme araması yapabilirsin.")
@@ -470,7 +475,7 @@ if st.session_state.get('analiz_tamam', False):
                         "deger": ornek_oranlar[market]
                     }
                 else:
-                    st.warning(f"⚠️ {secili_buro} için '{market}' sütunu veritabanında bulunamadı, bu kriter atlanacak.")
+                    st.warning(f"⚠️ {secili_buro} için '{market}' sütunu bulunamadı.")
 
         if st.button(f"🔍 {secili_buro} Veritabanını Bu Marketlerle Tara", use_container_width=True):
             if not aktif_kriterler:
@@ -486,9 +491,9 @@ if st.session_state.get('analiz_tamam', False):
                     bulunan_maclar = df[filtre].copy()
 
                     if len(bulunan_maclar) == 0:
-                        st.warning(f"⚠️ {secili_buro} tarafında bu oran kombinasyonuna sahip geçmiş maç bulunamadı. Toleransı (±) artırmayı veya daha az filtre seçmeyi deneyin.")
+                        st.warning("Eşleşen maç bulunamadı.")
                     else:
-                        st.success(f"✅ Toplam **{len(bulunan_maclar)}** eşleşen maç bulundu! ({secili_buro} Oranlarıyla)")
+                        st.success(f"✅ Toplam **{len(bulunan_maclar)}** eşleşen maç bulundu!")
 
                         b_ms1 = len(bulunan_maclar[bulunan_maclar['res'] == 'H'])
                         b_ms0 = len(bulunan_maclar[bulunan_maclar['res'] == 'D'])
@@ -521,15 +526,12 @@ if st.session_state.get('analiz_tamam', False):
                         e5.metric("İY 1.5 ÜST", f"%{round((b_iy15/len(bulunan_maclar))*100,1)}")
 
                         st.markdown("#### 📋 Eşleşen Maçların Detaylı Listesi")
-                        
                         goster_sutunlar = ['Date', 'HomeTeam', 'AwayTeam', 'HTHG', 'HTAG', 'FTHG', 'FTAG']
-                        for m_key, m_val in aktif_kriterler.items():
-                            goster_sutunlar.append(m_val['sutun'])
+                        for m_key, m_val in aktif_kriterler.items(): goster_sutunlar.append(m_val['sutun'])
                         
                         gosterge_df = bulunan_maclar[list(dict.fromkeys(goster_sutunlar))].copy()
                         gosterge_df['İY Skor'] = gosterge_df['HTHG'].fillna(0).astype(int).astype(str) + " - " + gosterge_df['HTAG'].fillna(0).astype(int).astype(str)
                         gosterge_df['MS Skor'] = gosterge_df['FTHG'].fillna(0).astype(int).astype(str) + " - " + gosterge_df['FTAG'].fillna(0).astype(int).astype(str)
-                        
                         st.dataframe(gosterge_df, use_container_width=True)
 
     # --- TAB 3: ROI & KASA ---
@@ -698,17 +700,23 @@ if st.session_state.get('analiz_tamam', False):
             if bulten_sonuclari:
                 df_bulten = pd.DataFrame(bulten_sonuclari)
                 ilerleme_cubugu.empty()
-                durum_metni.success("✅ Tüm bülten analizi tamamlandı! Hedef olasılıkların sütun başlıklarına (Örn: KG VAR) tıklayarak en yüksekten düşüğe doğru sıralayabilirsin.")
+                durum_metni.success("✅ Tüm bülten analizi tamamlandı! Hedef olasılıkların sütun başlıklarına tıklayarak en yüksekten düşüğe doğru sıralayabilirsin.")
                 
+                # Matplotlib gerektirmeyen, Streamlit'in kendi native ve çok daha şık Progress barları!
                 st.dataframe(
-                    df_bulten.style.background_gradient(
-                        cmap='Greens', 
-                        subset=['KG VAR (%)', '2.5 ÜST (%)', 'İY 0.5 ÜST (%)', 'İY 1.5 ÜST (%)']
-                    )
-                    .format("{:.2f}", subset=['MS 1', 'MS X', 'MS 2'])
-                    .format("{:.1f}%", subset=['KG VAR (%)', '2.5 ÜST (%)', 'İY 0.5 ÜST (%)', 'İY 1.5 ÜST (%)']),
+                    df_bulten,
+                    column_config={
+                        "KG VAR (%)": st.column_config.ProgressColumn("KG VAR (%)", format="%.1f%%", min_value=0, max_value=100),
+                        "2.5 ÜST (%)": st.column_config.ProgressColumn("2.5 ÜST (%)", format="%.1f%%", min_value=0, max_value=100),
+                        "İY 0.5 ÜST (%)": st.column_config.ProgressColumn("İY 0.5 ÜST (%)", format="%.1f%%", min_value=0, max_value=100),
+                        "İY 1.5 ÜST (%)": st.column_config.ProgressColumn("İY 1.5 ÜST (%)", format="%.1f%%", min_value=0, max_value=100),
+                        "MS 1": st.column_config.NumberColumn("MS 1", format="%.2f"),
+                        "MS X": st.column_config.NumberColumn("MS X", format="%.2f"),
+                        "MS 2": st.column_config.NumberColumn("MS 2", format="%.2f"),
+                    },
                     use_container_width=True,
-                    height=800
+                    height=800,
+                    hide_index=True
                 )
             else:
                 ilerleme_cubugu.empty()
