@@ -75,6 +75,60 @@ def takip_dosyasi_kaydet(df_takip):
             pass
     df_takip.to_csv("tahmin_gecmisi.csv", index=False)
 
+# --- GÜNLÜK RADAR KAYDI (BÜLTEN TARAMA GEÇMİŞİ) ---
+RADAR_SUTUNLARI = ['ID', 'Tarih', 'Mac', 'MS_Tahmin', 'KG_Tahmin', 'Ust25_Tahmin',
+                    'IY05_Tahmin', 'IY15_Tahmin', 'IY_Skor', 'MS_Skor', 'Durum']
+
+@st.cache_resource
+def google_sheets_radar_baglan():
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+        key_dict = json.loads(st.secrets["GOOGLE_JSON"])
+        creds = Credentials.from_service_account_info(
+            key_dict,
+            scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        )
+        client = gspread.authorize(creds)
+        spreadsheet = client.open_by_url(st.secrets["GOOGLE_SHEET_URL"])
+        try:
+            sheet = spreadsheet.worksheet("Radar_Gecmisi")
+        except gspread.exceptions.WorksheetNotFound:
+            sheet = spreadsheet.add_worksheet(title="Radar_Gecmisi", rows=2000, cols=15)
+        return sheet
+    except Exception as e:
+        return None
+
+def radar_dosyasi_yukle():
+    sheet = google_sheets_radar_baglan()
+    if sheet is not None:
+        try:
+            veriler = sheet.get_all_records()
+            if not veriler:
+                sheet.append_row(RADAR_SUTUNLARI)
+                return pd.DataFrame(columns=RADAR_SUTUNLARI)
+            df = pd.DataFrame(veriler)
+            for col in RADAR_SUTUNLARI:
+                if col not in df.columns: df[col] = "-"
+            return df
+        except:
+            pass
+    if os.path.exists("radar_gecmisi.csv"):
+        return pd.read_csv("radar_gecmisi.csv")
+    return pd.DataFrame(columns=RADAR_SUTUNLARI)
+
+def radar_dosyasi_kaydet(df_radar):
+    sheet = google_sheets_radar_baglan()
+    if sheet is not None:
+        try:
+            sheet.clear()
+            data = [df_radar.columns.values.tolist()] + df_radar.fillna("").values.tolist()
+            sheet.update(range_name='A1', values=data)
+            return
+        except:
+            pass
+    df_radar.to_csv("radar_gecmisi.csv", index=False)
+
 def oran_duzelt(deger):
     try:
         val = float(deger)
@@ -646,6 +700,7 @@ if st.session_state.get('analiz_tamam', False):
 
         if st.button("🚀 Tüm Bülteni Analiz Et (Bülten boyutuna göre 10-30 sn sürebilir)", use_container_width=True):
             bulten_sonuclari = []
+            radar_kayit_verisi = []
             ilerleme_cubugu = st.progress(0)
             durum_metni = st.empty()
             
@@ -683,6 +738,14 @@ if st.session_state.get('analiz_tamam', False):
                     iy_goller = tablo_df['İlk Yarı Skoru'].apply(iy_gol_hesapla)
                     iy_05_yuzde = round((iy_goller > 0).mean() * 100, 1)
                     iy_15_yuzde = round((iy_goller > 1).mean() * 100, 1)
+
+                    # Her market için en olası tahmini (yön) belirle
+                    ms_olasilik_sozluk = {"MS 1": ph, "MS X": pd_oran, "MS 2": pa}
+                    ms_tahmin = max(ms_olasilik_sozluk, key=ms_olasilik_sozluk.get)
+                    kg_tahmin = "VAR" if kg_yuzdesi >= 50 else "YOK"
+                    ust25_tahmin = "ÜST" if ust_yuzdesi >= 50 else "ALT"
+                    iy05_tahmin = "ÜST" if iy_05_yuzde >= 50 else "ALT"
+                    iy15_tahmin = "ÜST" if iy_15_yuzde >= 50 else "ALT"
                     
                     bulten_sonuclari.append({
                         "Maç": mac_adi,
@@ -692,7 +755,17 @@ if st.session_state.get('analiz_tamam', False):
                         "KG VAR (%)": float(kg_yuzdesi),
                         "2.5 ÜST (%)": float(ust_yuzdesi),
                         "İY 0.5 ÜST (%)": float(iy_05_yuzde),
-                        "İY 1.5 ÜST (%)": float(iy_15_yuzde)
+                        "İY 1.5 ÜST (%)": float(iy_15_yuzde),
+                        "MS Tahmini": ms_tahmin
+                    })
+
+                    radar_kayit_verisi.append({
+                        "Mac": mac_adi,
+                        "MS_Tahmin": ms_tahmin,
+                        "KG_Tahmin": kg_tahmin,
+                        "Ust25_Tahmin": ust25_tahmin,
+                        "IY05_Tahmin": iy05_tahmin,
+                        "IY15_Tahmin": iy15_tahmin
                     })
                 except Exception as e:
                     continue
@@ -701,6 +774,10 @@ if st.session_state.get('analiz_tamam', False):
                 df_bulten = pd.DataFrame(bulten_sonuclari)
                 ilerleme_cubugu.empty()
                 durum_metni.success("✅ Tüm bülten analizi tamamlandı! Hedef olasılıkların sütun başlıklarına tıklayarak en yüksekten düşüğe doğru sıralayabilirsin.")
+
+                # Bu taramayı, günlük radar kaydına eklemek için hafızada tut
+                st.session_state['radar_son_tarama'] = radar_kayit_verisi
+                st.session_state['radar_son_tarama_zamani'] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
                 
                 # Matplotlib gerektirmeyen, Streamlit'in kendi native ve çok daha şık Progress barları!
                 st.dataframe(
@@ -721,3 +798,156 @@ if st.session_state.get('analiz_tamam', False):
             else:
                 ilerleme_cubugu.empty()
                 durum_metni.error("Analiz edilecek maç bulunamadı veya bir hata oluştu.")
+
+        # --- YENİ: TARAMAYI GÜNLÜK RADAR KAYDINA EKLE ---
+        if st.session_state.get('radar_son_tarama'):
+            st.markdown("---")
+            st.caption(f"Son tarama zamanı: {st.session_state.get('radar_son_tarama_zamani', '-')} | {len(st.session_state['radar_son_tarama'])} maç analiz edildi.")
+            if st.button("💾 Bu Taramayı Bugünün Radar Kaydına Ekle", use_container_width=True):
+                df_radar = radar_dosyasi_yukle()
+                bugun = pd.Timestamp.now().strftime("%Y-%m-%d")
+                bugun_kayitli_maclar = set(df_radar[df_radar['Tarih'] == bugun]['Mac'].tolist()) if len(df_radar) > 0 else set()
+
+                sonraki_id = int(pd.to_numeric(df_radar['ID'], errors='coerce').max()) + 1 if len(df_radar) > 0 else 1
+                yeni_radar_satirlari = []
+                for kayit in st.session_state['radar_son_tarama']:
+                    if kayit['Mac'] in bugun_kayitli_maclar:
+                        continue
+                    yeni_radar_satirlari.append({
+                        'ID': sonraki_id, 'Tarih': bugun, 'Mac': kayit['Mac'],
+                        'MS_Tahmin': kayit['MS_Tahmin'], 'KG_Tahmin': kayit['KG_Tahmin'],
+                        'Ust25_Tahmin': kayit['Ust25_Tahmin'], 'IY05_Tahmin': kayit['IY05_Tahmin'],
+                        'IY15_Tahmin': kayit['IY15_Tahmin'], 'IY_Skor': 'Oynanmadı',
+                        'MS_Skor': 'Oynanmadı', 'Durum': 'Bekliyor'
+                    })
+                    sonraki_id += 1
+
+                if yeni_radar_satirlari:
+                    df_radar = pd.concat([df_radar, pd.DataFrame(yeni_radar_satirlari)], ignore_index=True)
+                    radar_dosyasi_kaydet(df_radar)
+                    st.success(f"✅ {len(yeni_radar_satirlari)} maç bugünün ({bugun}) radar kaydına eklendi.")
+                else:
+                    st.info(f"Bu maçlar zaten bugünün ({bugun}) radar kaydında mevcut, tekrar eklenmedi.")
+
+        # --- YENİ: RADAR GEÇMİŞİ, SONUÇ GİRİŞİ VE BAŞARI KARNESİ ---
+        st.markdown("---")
+        st.subheader("📅 Radar Geçmişi, Sonuç Girişi & Başarı Karnesi")
+        st.markdown("Kaydedilen günlük radar taramalarındaki maçların sonucunu gir; sistem her market için (MS, KG, 2.5 Alt/Üst, İY 0.5, İY 1.5) tahminin tutup tutmadığını otomatik hesaplayıp isabet oranını gösterir.")
+
+        df_radar_gecmis = radar_dosyasi_yukle()
+
+        if len(df_radar_gecmis) == 0:
+            st.info("Henüz kaydedilmiş bir radar taraması yok. Yukarıdan bir tarama yapıp 'Bugünün Radar Kaydına Ekle' butonuna basarak başlayabilirsin.")
+        else:
+            bekleyen_radar = df_radar_gecmis[df_radar_gecmis['Durum'] == 'Bekliyor']
+
+            if len(bekleyen_radar) > 0:
+                st.markdown(f"#### ⚽ Sonucu Bekleyen Radar Maçları ({len(bekleyen_radar)})")
+                rc1, rc2, rc3, rc_btn = st.columns([2, 1, 1, 1])
+                secili_radar_id = rc1.selectbox(
+                    "Sonuçlandırılacak Radar Maçı:",
+                    bekleyen_radar['ID'].tolist(),
+                    format_func=lambda x: f"ID {x} | {df_radar_gecmis.loc[df_radar_gecmis['ID']==x, 'Tarih'].values[0]} | {df_radar_gecmis.loc[df_radar_gecmis['ID']==x, 'Mac'].values[0]}",
+                    key="radar_sonuc_sec"
+                )
+                ms_skor_radar_gir = rc2.text_input("MS Skoru:", value="1-1", key="radar_ms_skor_gir")
+                iy_skor_radar_gir = rc3.text_input("İY Skoru:", value="0-0", key="radar_iy_skor_gir")
+                rc_btn.markdown("<br>", unsafe_allow_html=True)
+                if rc_btn.button("💾 Sonucu Kaydet", use_container_width=True, key="radar_sonuc_kaydet_btn"):
+                    df_radar_gecmis.loc[df_radar_gecmis['ID'] == secili_radar_id, 'MS_Skor'] = ms_skor_radar_gir
+                    df_radar_gecmis.loc[df_radar_gecmis['ID'] == secili_radar_id, 'IY_Skor'] = iy_skor_radar_gir
+                    df_radar_gecmis.loc[df_radar_gecmis['ID'] == secili_radar_id, 'Durum'] = 'Tamamlandı'
+                    radar_dosyasi_kaydet(df_radar_gecmis)
+                    st.success("✅ Radar maç sonucu kaydedildi ve isabet karnesine işlendi.")
+                    st.rerun()
+                st.markdown("---")
+            else:
+                st.info("🎉 Sonucu bekleyen radar maçı yok, tüm kayıtlar tamamlanmış.")
+
+            tamamlanan_radar = df_radar_gecmis[df_radar_gecmis['Durum'] == 'Tamamlandı'].copy()
+
+            if len(tamamlanan_radar) > 0:
+                def radar_isabet_hesapla(satir):
+                    try:
+                        ms_h, ms_a = map(int, str(satir['MS_Skor']).split('-'))
+                    except:
+                        return pd.Series({'MS_Isabet': np.nan, 'KG_Isabet': np.nan, 'Ust25_Isabet': np.nan,
+                                           'IY05_Isabet': np.nan, 'IY15_Isabet': np.nan})
+                    ms_gercek = "MS 1" if ms_h > ms_a else ("MS 2" if ms_a > ms_h else "MS X")
+                    kg_gercek = "VAR" if (ms_h > 0 and ms_a > 0) else "YOK"
+                    ust_gercek = "ÜST" if (ms_h + ms_a) > 2.5 else "ALT"
+
+                    sonuc = {
+                        'MS_Isabet': satir['MS_Tahmin'] == ms_gercek,
+                        'KG_Isabet': satir['KG_Tahmin'] == kg_gercek,
+                        'Ust25_Isabet': satir['Ust25_Tahmin'] == ust_gercek,
+                    }
+                    try:
+                        iy_h, iy_a = map(int, str(satir['IY_Skor']).split('-'))
+                        iy_toplam = iy_h + iy_a
+                        iy05_gercek = "ÜST" if iy_toplam > 0 else "ALT"
+                        iy15_gercek = "ÜST" if iy_toplam > 1 else "ALT"
+                        sonuc['IY05_Isabet'] = satir['IY05_Tahmin'] == iy05_gercek
+                        sonuc['IY15_Isabet'] = satir['IY15_Tahmin'] == iy15_gercek
+                    except:
+                        sonuc['IY05_Isabet'] = np.nan
+                        sonuc['IY15_Isabet'] = np.nan
+                    return pd.Series(sonuc)
+
+                isabet_sonuclari = tamamlanan_radar.apply(radar_isabet_hesapla, axis=1)
+                tamamlanan_radar = pd.concat([tamamlanan_radar, isabet_sonuclari], axis=1)
+
+                st.markdown("#### 🏆 Genel Radar Başarı Karnesi (Tüm Zamanlar)")
+                karne_kolonlari = st.columns(5)
+                karne_tanimlari = [
+                    ('MS_Isabet', 'MS 1X2'), ('KG_Isabet', 'KG VAR/YOK'), ('Ust25_Isabet', '2.5 Alt/Üst'),
+                    ('IY05_Isabet', 'İY 0.5 Alt/Üst'), ('IY15_Isabet', 'İY 1.5 Alt/Üst')
+                ]
+                for kolon, (alan, etiket) in zip(karne_kolonlari, karne_tanimlari):
+                    gecerli = tamamlanan_radar[alan].dropna()
+                    if len(gecerli) > 0:
+                        isabet_orani = round(gecerli.mean() * 100, 1)
+                        kolon.metric(etiket, f"%{isabet_orani}", f"✅ {int(gecerli.sum())} | ❌ {len(gecerli) - int(gecerli.sum())}")
+                    else:
+                        kolon.metric(etiket, "—")
+
+                st.markdown("#### 📅 Günlük Bazda İsabet Dağılımı")
+                gunluk_karne = tamamlanan_radar.groupby('Tarih').agg(
+                    Mac_Sayisi=('Mac', 'count'),
+                    MS_Isabet_Perc=('MS_Isabet', lambda x: round(x.mean() * 100, 1) if x.notna().any() else None),
+                    KG_Isabet_Perc=('KG_Isabet', lambda x: round(x.mean() * 100, 1) if x.notna().any() else None),
+                    Ust25_Isabet_Perc=('Ust25_Isabet', lambda x: round(x.mean() * 100, 1) if x.notna().any() else None),
+                    IY05_Isabet_Perc=('IY05_Isabet', lambda x: round(x.mean() * 100, 1) if x.notna().any() else None),
+                    IY15_Isabet_Perc=('IY15_Isabet', lambda x: round(x.mean() * 100, 1) if x.notna().any() else None),
+                ).reset_index().sort_values('Tarih', ascending=False).rename(columns={
+                    'Mac_Sayisi': 'Maç Sayısı', 'MS_Isabet_Perc': 'MS İsabet (%)', 'KG_Isabet_Perc': 'KG İsabet (%)',
+                    'Ust25_Isabet_Perc': '2.5 İsabet (%)', 'IY05_Isabet_Perc': 'İY 0.5 İsabet (%)', 'IY15_Isabet_Perc': 'İY 1.5 İsabet (%)'
+                })
+                st.dataframe(
+                    gunluk_karne,
+                    column_config={
+                        'MS İsabet (%)': st.column_config.ProgressColumn('MS İsabet (%)', format="%.1f%%", min_value=0, max_value=100),
+                        'KG İsabet (%)': st.column_config.ProgressColumn('KG İsabet (%)', format="%.1f%%", min_value=0, max_value=100),
+                        '2.5 İsabet (%)': st.column_config.ProgressColumn('2.5 İsabet (%)', format="%.1f%%", min_value=0, max_value=100),
+                        'İY 0.5 İsabet (%)': st.column_config.ProgressColumn('İY 0.5 İsabet (%)', format="%.1f%%", min_value=0, max_value=100),
+                        'İY 1.5 İsabet (%)': st.column_config.ProgressColumn('İY 1.5 İsabet (%)', format="%.1f%%", min_value=0, max_value=100),
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                with st.expander("📋 Tüm Radar Kayıtlarının Detaylı Dökümünü Gör (Tahmin vs Gerçek)"):
+                    def isabet_isaretle(deger):
+                        if pd.isna(deger): return "-"
+                        return "✅" if deger else "❌"
+
+                    detay_df = tamamlanan_radar.copy()
+                    for kolon, _ in karne_tanimlari:
+                        detay_df[kolon] = detay_df[kolon].apply(isabet_isaretle)
+
+                    detay_goster_sutunlari = ['Tarih', 'Mac', 'MS_Tahmin', 'MS_Skor', 'MS_Isabet',
+                                               'KG_Tahmin', 'KG_Isabet', 'Ust25_Tahmin', 'Ust25_Isabet',
+                                               'IY05_Tahmin', 'IY05_Isabet', 'IY15_Tahmin', 'IY15_Isabet']
+                    st.dataframe(detay_df[detay_goster_sutunlari], use_container_width=True, hide_index=True)
+            else:
+                st.info("Henüz sonuçlanmış bir radar maçı yok. Yukarıdan bekleyen maçların sonucunu girerek başarı karnesini oluşturabilirsin.")
