@@ -101,21 +101,38 @@ def google_sheets_radar_baglan():
 
 def radar_dosyasi_yukle():
     sheet = google_sheets_radar_baglan()
+    df = None
     if sheet is not None:
         try:
             veriler = sheet.get_all_records()
             if not veriler:
                 sheet.append_row(RADAR_SUTUNLARI)
-                return pd.DataFrame(columns=RADAR_SUTUNLARI)
-            df = pd.DataFrame(veriler)
-            for col in RADAR_SUTUNLARI:
-                if col not in df.columns: df[col] = "-"
-            return df
+                df = pd.DataFrame(columns=RADAR_SUTUNLARI)
+            else:
+                df = pd.DataFrame(veriler)
+                for col in RADAR_SUTUNLARI:
+                    if col not in df.columns: df[col] = "-"
         except:
-            pass
-    if os.path.exists("radar_gecmisi.csv"):
-        return pd.read_csv("radar_gecmisi.csv")
-    return pd.DataFrame(columns=RADAR_SUTUNLARI)
+            df = None
+    if df is None:
+        if os.path.exists("radar_gecmisi.csv"):
+            df = pd.read_csv("radar_gecmisi.csv")
+        else:
+            df = pd.DataFrame(columns=RADAR_SUTUNLARI)
+
+    # ID sütununu her zaman geçerli/sayısal hale getir (bozuk veya eksik veriye karşı koruma).
+    # Google Sheets'ten dönen ID'ler sayısal değilse, sütun tamamen bozuksa ya da hiç yoksa,
+    # ID'leri 1'den başlayarak yeniden üret; böylece sonraki_id hesaplaması asla NaN'a düşmez.
+    if len(df) > 0:
+        if 'ID' not in df.columns:
+            df['ID'] = range(1, len(df) + 1)
+        else:
+            id_sayisal = pd.to_numeric(df['ID'], errors='coerce')
+            if id_sayisal.isna().any():
+                df['ID'] = range(1, len(df) + 1)
+            else:
+                df['ID'] = id_sayisal.astype(int)
+    return df
 
 def radar_dosyasi_kaydet(df_radar):
     sheet = google_sheets_radar_baglan()
@@ -808,7 +825,7 @@ if st.session_state.get('analiz_tamam', False):
                 bugun = pd.Timestamp.now().strftime("%Y-%m-%d")
                 bugun_kayitli_maclar = set(df_radar[df_radar['Tarih'] == bugun]['Mac'].tolist()) if len(df_radar) > 0 else set()
 
-                sonraki_id = int(pd.to_numeric(df_radar['ID'], errors='coerce').max()) + 1 if len(df_radar) > 0 else 1
+                sonraki_id = int(df_radar['ID'].max()) + 1 if len(df_radar) > 0 else 1
                 yeni_radar_satirlari = []
                 for kayit in st.session_state['radar_son_tarama']:
                     if kayit['Mac'] in bugun_kayitli_maclar:
