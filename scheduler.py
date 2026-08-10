@@ -21,6 +21,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+import live_scores  # live_scores.py aynı klasörde olmalı
+
 # ── Loglama ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
     filename="macapp_scheduler.log",
@@ -196,7 +198,65 @@ def gunluk_bulten_gorevi(app_modulu):
         durum_kaydet(durum)
 
 
-# ── Görev 2: Günü kapatma özeti ──────────────────────────────────────────────
+# ── Görev 2: Canlı skor güncelleme ───────────────────────────────────────────
+
+def canli_skor_gorevi(app_modulu):
+    """
+    Her 30 dakikada (14:00-23:30 arası) çalışır.
+    Bekleyen maçların skorunu API-Football'dan çeker ve günceller.
+    """
+    log.info("=== CANLI SKOR GÖREVİ BAŞLADI ===")
+    durum = durum_yukle()
+    try:
+        guncellenen = live_scores.bekleyen_maclari_guncelle(app_modulu)
+        log.info(f"Canlı skor: {guncellenen} maç güncellendi.")
+
+        # API kota bilgisini logla
+        kota = live_scores.api_kota_kontrol()
+        log.info(
+            f"API kota: {kota['kullanilan']}/{kota['limit']} "
+            f"(Plan: {kota['plan']})"
+        )
+
+        durum["son_canli_skor"] = datetime.now().isoformat()
+        durum["son_guncellenen_mac_sayisi"] = guncellenen
+        durum_kaydet(durum)
+
+        # Güncelleme olduysa Telegram'a bildir
+        if guncellenen > 0:
+            _telegram_bildir_skor(guncellenen, app_modulu)
+
+    except Exception as hata:
+        log.error(f"Canlı skor görevi hatası: {hata}", exc_info=True)
+    log.info("=== CANLI SKOR GÖREVİ TAMAMLANDI ===")
+
+
+def _telegram_bildir_skor(guncellenen: int, app_modulu):
+    """Güncellenen skorları Telegram'a bildirir."""
+    try:
+        import streamlit as st
+        import requests as req
+
+        token = st.secrets.get("TELEGRAM_TOKEN", "")
+        chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "")
+        if not token or not chat_id:
+            return
+
+        metin = (
+            f"⚽ <b>MacApp Skor Güncellemesi</b>\n"
+            f"🔄 {guncellenen} maçın sonucu otomatik güncellendi.\n"
+            f"📊 Başarı karnesini görmek için uygulamayı aç."
+        )
+        req.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data={"chat_id": chat_id, "text": metin, "parse_mode": "HTML"},
+            timeout=10,
+        )
+    except Exception as e:
+        log.warning(f"Telegram skor bildirimi gönderilemedi: {e}")
+
+
+# ── Görev 3: Günü kapatma özeti ──────────────────────────────────────────────
 
 def gunluk_kapama_gorevi(app_modulu):
     """
@@ -301,7 +361,17 @@ def zamanlayici_baslat(app_modulu):
             replace_existing=True,
         )
 
-        # Görev 2: Her gün 00:05'te günü kapat
+        # Görev 2: Her 30 dakikada canlı skor güncelle (14:00-23:30 arası)
+        sched.add_job(
+            func=canli_skor_gorevi,
+            trigger=CronTrigger(hour="14-23", minute="0,30"),
+            args=[app_modulu],
+            id="canli_skor",
+            name="Canlı Skor Güncellemesi",
+            replace_existing=True,
+        )
+
+        # Görev 3: Her gün 00:05'te günü kapat
         sched.add_job(
             func=gunluk_kapama_gorevi,
             trigger=CronTrigger(hour=0, minute=5),
@@ -316,7 +386,7 @@ def zamanlayici_baslat(app_modulu):
 
         log.info(
             "Zamanlayıcı başlatıldı. "
-            "Görevler: bülten=10:00, kapama=00:05 (Europe/Istanbul)"
+            "Görevler: bülten=10:00, canlı_skor=14-23:*/30, kapama=00:05 (Europe/Istanbul)"
         )
         return sched
 
@@ -351,6 +421,8 @@ def zamanlayici_durumu() -> dict:
         "son_tarama": durum.get("son_bulten_tarama"),
         "bugun_analiz": durum.get("bugun_analiz_sayisi", 0),
         "toplam_analiz": durum.get("toplam_analiz", 0),
+        "son_canli_skor": durum.get("son_canli_skor"),
+        "son_guncellenen": durum.get("son_guncellenen_mac_sayisi", 0),
     }
 
 
