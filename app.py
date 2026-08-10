@@ -202,7 +202,7 @@ def sutun_getir(df, olasi_sutunlar):
 # --- YAPAY ZEKA VE KNN MOTORU ---
 @st.cache_resource
 def motoru_baslat():
-    veri_yolu = "iddaa_arsiv_YEDEK.parquet" 
+    veri_yolu = "iddaa_arsiv_YEDEK_1.parquet"
     df = pd.read_parquet(veri_yolu)
     
     # 2020 VE SONRASI FİLTRESİ
