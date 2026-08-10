@@ -9,6 +9,22 @@ import json
 import warnings
 warnings.filterwarnings('ignore')
 
+
+import sys
+import atexit
+import scheduler  # scheduler.py aynı klasörde olmalı
+ 
+# Zamanlayıcıyı başlat (mevcut modülü kendisi olarak ver)
+# st.cache_resource ile Streamlit worker'lar arasında tek örnek garantilenir
+@st.cache_resource
+def _zamanlayici_baslat_bir_kez():
+    sched = scheduler.zamanlayici_baslat(sys.modules["__main__"])
+    atexit.register(scheduler.zamanlayici_durdur)
+    return sched
+ 
+_zamanlayici_baslat_bir_kez()
+
+
 # --- SAYFA VE TEMA AYARLARI ---
 st.set_page_config(page_title="MacApp Pro | Trading Terminal", page_icon="⚽", layout="wide")
 
@@ -377,6 +393,48 @@ ms0_oran = st.sidebar.number_input("MS X Oranı", min_value=1.01, max_value=50.0
 ms2_oran = st.sidebar.number_input("MS 2 Oranı", min_value=1.01, max_value=50.0, value=float(secili_oranlar["ms2"]), step=0.01, format="%.2f")
 ust_oran = st.sidebar.number_input("2.5 Üst Oranı", min_value=1.01, max_value=50.0, value=float(secili_oranlar["ust"]), step=0.01, format="%.2f")
 kg_oran = st.sidebar.number_input("KG Var Oranı", min_value=1.01, max_value=50.0, value=float(secili_oranlar["kg"]), step=0.01, format="%.2f")
+
+
+st.sidebar.markdown("---")
+st.sidebar.header("⏰ Otomatik Görev Durumu")
+ 
+durum = scheduler.zamanlayici_durumu()
+ 
+if durum["aktif"]:
+    st.sidebar.success("🟢 Zamanlayıcı çalışıyor")
+    
+    # Son tarama zamanı
+    if durum["son_tarama"]:
+        son_tarama_dt = pd.to_datetime(durum["son_tarama"])
+        st.sidebar.caption(f"Son tarama: {son_tarama_dt.strftime('%d/%m %H:%M')}")
+    
+    # Bugün / toplam
+    col_a, col_b = st.sidebar.columns(2)
+    col_a.metric("Bugün", durum["bugun_analiz"])
+    col_b.metric("Toplam", durum["toplam_analiz"])
+    
+    # Sonraki görevler
+    for gorev in durum["gorevler"]:
+        sonraki = pd.to_datetime(gorev["sonraki_calisma"])
+        st.sidebar.caption(
+            f"⏭ {gorev['isim']}: {sonraki.strftime('%d/%m %H:%M')}"
+        )
+    
+    # Manuel tetikleme butonu
+    if st.sidebar.button("▶️ Şimdi Çalıştır", use_container_width=True):
+        scheduler.manuel_bulten_calistir(sys.modules["__main__"])
+        st.sidebar.info(
+            "✅ Arka planda başlatıldı. "
+            "1-2 dakika sonra Radar sekmesini yenile."
+        )
+else:
+    st.sidebar.error("🔴 Zamanlayıcı çalışmıyor")
+    if st.sidebar.button("🔄 Yeniden Başlat", use_container_width=True):
+        _zamanlayici_baslat_bir_kez.clear()
+        _zamanlayici_baslat_bir_kez()
+        st.rerun()
+
+
 
 st.sidebar.markdown("---")
 st.sidebar.header("💰 Risk & Kasa Yönetimi")
