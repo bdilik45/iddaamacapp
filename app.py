@@ -781,7 +781,7 @@ if st.session_state.get('analiz_tamam', False):
                     df_takip.loc[df_takip['ID'] == secili_id, 'Durum'] = 'Tamamlandı'
                     takip_dosyasi_kaydet(df_takip)
                     st.success("İstatistikler ve maç sonucu Google Sheets veritabanına işlendi!")
-                 st.session_state['aktif_sayfa'] = 'dashboard'
+                    st.session_state['aktif_sayfa'] = 'dashboard'
                     st.rerun()
             else:
                 st.info("🎉 Bekleyen maçınız bulunmuyor.")
