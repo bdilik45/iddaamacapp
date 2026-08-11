@@ -1,3 +1,4 @@
+import dashboard
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -27,6 +28,12 @@ _zamanlayici_baslat_bir_kez()
 
 # --- SAYFA VE TEMA AYARLARI ---
 st.set_page_config(page_title="MacApp Pro | Trading Terminal", page_icon="⚽", layout="wide")
+if 'aktif_sayfa' not in st.session_state:
+    st.session_state['aktif_sayfa'] = 'dashboard'
+
+if st.session_state['aktif_sayfa'] == 'dashboard':
+    dashboard.goster(takip_dosyasi_yukle, radar_dosyasi_yukle, bulteni_kazi)
+    st.stop()
 
 st.markdown("""
     <style>
@@ -380,6 +387,12 @@ st.title("⚽ MacApp Pro | AI Trading & Risk Terminal")
 
 arsiv_boyutu_str = f"{len(df):,}".replace(",", ".")
 st.markdown(f"*(2020 ve sonrası **{arsiv_boyutu_str}** maçlık filtreli makine öğrenmesi arşivi devrede)*")
+
+if st.sidebar.button("🏠 Ana Dashboard", use_container_width=True):
+    st.session_state['aktif_sayfa'] = 'dashboard'
+    st.rerun()
+
+st.sidebar.markdown("---")
 
 st.sidebar.header("🌐 Bülten & Maç Seçimi")
 guncel_bulten = bulteni_kazi()
