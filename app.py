@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -29,12 +28,6 @@ _zamanlayici_baslat_bir_kez()
 
 # --- SAYFA VE TEMA AYARLARI ---
 st.set_page_config(page_title="MacApp Pro | Trading Terminal", page_icon="⚽", layout="wide")
-if 'aktif_sayfa' not in st.session_state:
-    st.session_state['aktif_sayfa'] = 'dashboard'
-
-if st.session_state['aktif_sayfa'] == 'dashboard':
-    dashboard.goster(takip_dosyasi_yukle, radar_dosyasi_yukle, bulteni_kazi)
-    st.stop()
 
 st.markdown("""
     <style>
@@ -382,6 +375,13 @@ def bulteni_kazi():
     except:
         st.sidebar.warning("⚠️ Canlı bülten alınamadı. Standart mod aktif.")
     return cekilen_maclar
+
+if 'aktif_sayfa' not in st.session_state:
+    st.session_state['aktif_sayfa'] = 'dashboard'
+
+if st.session_state['aktif_sayfa'] == 'dashboard':
+    dashboard.goster(takip_dosyasi_yukle, radar_dosyasi_yukle, bulteni_kazi)
+    st.stop()
 
 # --- KULLANICI ARAYÜZÜ (UI) ---
 st.title("⚽ MacApp Pro | AI Trading & Risk Terminal")
