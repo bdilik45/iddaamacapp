@@ -392,7 +392,10 @@ st.markdown(f"*(2020 ve sonrası **{arsiv_boyutu_str}** maçlık filtreli makine
 if st.sidebar.button("🏠 Ana Dashboard", use_container_width=True):
     st.session_state['aktif_sayfa'] = 'dashboard'
     st.rerun()
-
+ 
+if st.sidebar.button("🔍 Maç Analiz Et & Kaydet", use_container_width=True):
+    st.session_state['aktif_sayfa'] = 'analiz'
+    st.rerun()
 st.sidebar.markdown("---")
 
 st.sidebar.header("🌐 Bülten & Maç Seçimi")
@@ -778,6 +781,8 @@ if st.session_state.get('analiz_tamam', False):
                     df_takip.loc[df_takip['ID'] == secili_id, 'Durum'] = 'Tamamlandı'
                     takip_dosyasi_kaydet(df_takip)
                     st.success("İstatistikler ve maç sonucu Google Sheets veritabanına işlendi!")
+                 st.session_state['aktif_sayfa'] = 'dashboard'
+st.rerun()
                     st.rerun()
             else:
                 st.info("🎉 Bekleyen maçınız bulunmuyor.")
