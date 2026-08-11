@@ -782,7 +782,6 @@ if st.session_state.get('analiz_tamam', False):
                     takip_dosyasi_kaydet(df_takip)
                     st.success("İstatistikler ve maç sonucu Google Sheets veritabanına işlendi!")
                  st.session_state['aktif_sayfa'] = 'dashboard'
-st.rerun()
                     st.rerun()
             else:
                 st.info("🎉 Bekleyen maçınız bulunmuyor.")
